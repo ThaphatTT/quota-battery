@@ -1,0 +1,4 @@
+// Shared build settings for every target. The Team id is not committed: copy
+// ../Local.xcconfig.example to ../Local.xcconfig (gitignored) and put your own Team id there.
+DEVELOPMENT_TEAM =
+#include? "../Local.xcconfig"

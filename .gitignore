@@ -1,0 +1,7 @@
+.DS_Store
+__pycache__/
+build/
+DerivedData/
+mac/build/
+mac/Local.xcconfig
+xcuserdata/

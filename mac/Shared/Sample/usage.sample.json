@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "generated_at": "2026-11-19T04:30:00Z",
+  "accounts": [
+    {
+      "id": "claude-main",
+      "provider": "claude",
+      "label": "Claude",
+      "plan": "Max",
+      "status": "ok",
+      "error": null,
+      "error_code": null,
+      "updated_at": "2026-11-19T04:30:00Z",
+      "limits": [
+        { "key": "five_hour", "label": "5 ชม.", "window_seconds": 18000, "used_percent": 42.0, "resets_at": "2026-11-19T06:40:00Z" },
+        { "key": "seven_day", "label": "สัปดาห์", "window_seconds": 604800, "used_percent": 67.0, "resets_at": "2026-11-24T02:00:00Z" }
+      ],
+      "usage": {
+        "today": { "tokens": 1200000, "cost_usd": 18.4 },
+        "month": { "tokens": 35000000, "cost_usd": 512.0 }
+      },
+      "credits": { "extra_usage_enabled": true, "used_usd": 0, "limit_usd": 50, "balance_usd": null }
+    },
+    {
+      "id": "codex-main", "provider": "codex", "label": "ChatGPT", "plan": "Pro Lite",
+      "status": "ok", "error": null, "error_code": null, "updated_at": "2026-11-19T04:30:00Z",
+      "limits": [
+        { "key": "primary", "label": "สัปดาห์", "window_seconds": 604800, "used_percent": 93.0, "resets_at": "2026-11-20T02:35:51Z" }
+      ],
+      "usage": { "today": { "tokens": 640000, "cost_usd": null }, "month": { "tokens": 9000000, "cost_usd": null } },
+      "credits": { "extra_usage_enabled": false, "used_usd": null, "limit_usd": null, "balance_usd": 0 }
+    },
+    {
+      "id": "agy-main", "provider": "agy", "label": "agy", "plan": "free-tier",
+      "status": "ok", "error": null, "error_code": null, "updated_at": "2026-11-19T04:30:00Z",
+      "limits": [
+        { "key": "claude", "label": "Claude", "window_seconds": null, "used_percent": 0.0, "resets_at": "2026-11-19T09:21:41Z" },
+        { "key": "gemini_pro", "label": "Gemini Pro", "window_seconds": null, "used_percent": 0.0, "resets_at": "2026-11-19T09:21:41Z" },
+        { "key": "gemini_flash", "label": "Gemini Flash", "window_seconds": null, "used_percent": 0.0, "resets_at": "2026-11-19T09:21:41Z" }
+      ],
+      "usage": null,
+      "credits": null
+    }
+  ]
+}

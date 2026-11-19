@@ -5,3 +5,5 @@ DerivedData/
 mac/build/
 mac/Local.xcconfig
 xcuserdata/
+promo/out/
+promo/audio/build/

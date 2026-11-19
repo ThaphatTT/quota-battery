@@ -1,0 +1,77 @@
+<template>
+<style>
+@font-face{font-family:'QBThai';font-weight:400;src:local('Sukhumvit Set'),local('SukhumvitSet-Text'),local('Thonburi');}
+@font-face{font-family:'QBThai';font-weight:700;src:local('SukhumvitSet-Bold'),local('Sukhumvit Set Bold'),local('Thonburi Bold'),local('Thonburi');}
+#root{position:absolute;inset:0;overflow:hidden;color:#F5F5F7;font-family:Inter,'QBThai',sans-serif;
+  --red:#FF5F57;--yellow:#FFD60A;--green:#30D158;--ink:#F5F5F7;--mute:#98989D;--card:#1C1C1E;}
+#root *{box-sizing:border-box;margin:0;padding:0}
+.cap{position:absolute;left:90px;right:90px;top:210px;text-align:center}
+.en{font-family:Inter,'QBThai',sans-serif;font-weight:700;font-size:80px;line-height:1.08;letter-spacing:-0.025em}
+.th{font-family:'Noto Sans Thai','QBThai',Inter,sans-serif;font-weight:700;font-size:48px;line-height:1.25;color:#B8B8BF;margin-top:22px}
+.abs{position:absolute}
+.letter{display:inline-block;border-radius:14px;color:#fff;font-weight:700;text-align:center}
+.L-C{background:#DA7756}.L-G{background:#10A37F}.L-A{background:#4285F4}
+.batt{position:relative;border:3px solid #6e6e73;border-radius:12px;width:78px;height:36px}
+.batt::after{content:"";position:absolute;right:-9px;top:10px;width:5px;height:12px;border-radius:0 3px 3px 0;background:#6e6e73}
+.batt i{position:absolute;left:4px;top:4px;bottom:4px;border-radius:6px;background:#fff;width:0}
+
+.cap{top:190px}
+#s5-cam{position:absolute;left:0;top:0;width:1080px;height:1920px;transform-origin:540px 1400px}
+#s5-bar{position:absolute;left:90px;top:530px;width:900px;height:58px;border-radius:29px;background:rgba(58,58,60,.85);border:1px solid #48484a;box-shadow:0 18px 40px rgba(0,0,0,.5)}
+#s5-bar .dot{position:absolute;top:19px;width:20px;height:20px;border-radius:10px;background:#6e6e73}
+#s5-bar .tx{position:absolute;left:28px;top:12px;font-size:28px;font-weight:700;color:#d8d8dc}
+#s5-bi{position:absolute;right:44px;top:12px;display:flex;align-items:center;gap:10px;font-size:28px;font-weight:700}
+#s5-bi .batt{width:58px;height:28px;border-width:2px;border-radius:9px}
+#s5-bi .batt i{left:3px;top:3px;bottom:3px;width:11px;background:#FFD60A;border-radius:5px}
+#s5-bi .batt::after{right:-7px;top:7px;width:4px;height:10px}
+#s5-hl{position:absolute;right:30px;top:6px;width:112px;height:46px;border-radius:14px;background:rgba(255,255,255,.18);opacity:0}
+#s5-pop{position:absolute;left:350px;top:620px;width:640px;transform-origin:85% 0}
+#s5-pop img{display:block;width:100%;border-radius:22px;box-shadow:0 40px 90px rgba(0,0,0,.6)}
+.s5-n{position:absolute;left:130px;width:820px;height:160px;border-radius:34px;background:rgba(44,44,46,.96);border:1px solid #4a4a4c;box-shadow:0 30px 70px rgba(0,0,0,.6);opacity:0}
+.s5-n img{position:absolute;left:24px;top:35px;width:90px;height:90px}
+.s5-n .t{position:absolute;left:138px;top:22px;font-size:28px;font-weight:700;color:#98989D}
+.s5-n .m{position:absolute;left:138px;top:62px;right:28px;font-size:32px;font-weight:700;line-height:1.2;color:#f5f5f7}
+.s5-n .pc{font-weight:900}
+.s5-n .nw{position:absolute;right:28px;top:22px;font-size:28px;color:#8e8e93;font-weight:700}
+#s5-n1{top:1380px}#s5-n2{top:1380px}
+</style>
+<div id="root" data-composition-id="s5" data-width="1080" data-height="1920">
+
+<div class="cap"><div class="en" id="s5-en">Alerts before you hit the wall</div><div class="th" id="s5-th">เตือนก่อนโควตาหมด</div></div>
+<div id="s5-cam">
+  <div id="s5-bar"><div class="dot" style="left:300px"></div><div class="dot" style="left:340px"></div><div class="dot" style="left:380px"></div><div class="tx">Quota Battery</div>
+    <div id="s5-hl"></div><div id="s5-bi"><div class="batt"><i></i></div><span style="color:#d8d8dc">15%</span></div></div>
+  <div id="s5-pop"><img src="assets/popover-en.png" alt="The Quota Battery menu bar panel with sample data"></div>
+  <div class="s5-n" id="s5-n1"><img src="assets/icon.png" alt=""><div class="t">Quota Battery</div><div class="nw">now</div><div class="m">Claude · 5h used <span class="pc" style="color:#FFD60A">80%</span></div></div>
+  <div class="s5-n" id="s5-n2"><img src="assets/icon.png" alt=""><div class="t">Quota Battery</div><div class="nw">now</div><div class="m">Claude · 5h near limit, <span class="pc" style="color:#FF5F57">95%</span> used</div></div>
+</div>
+
+</div>
+<script>
+(function(){
+function rng(s){return function(){s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
+const tl = gsap.timeline({paused:true});
+
+tl.fromTo('#s5-en',{opacity:0,filter:'blur(8px)'},{opacity:1,filter:'blur(0px)',duration:0.3,ease:'expo.out'},0.1);
+tl.fromTo('#s5-th',{opacity:0,filter:'blur(6px)'},{opacity:1,filter:'blur(0px)',duration:0.3,ease:'expo.out'},0.35);
+// menu bar slides down from the top
+tl.fromTo('#s5-bar',{opacity:0,y:-60},{opacity:1,y:0,duration:0.7,ease:'expo.out'},0.4);
+// click on the menu bar icon, popover drops
+tl.fromTo('#s5-hl',{opacity:0},{opacity:1,duration:0.08},1.5);
+tl.fromTo('#s5-pop',{opacity:0,y:-40,scaleY:0.82,scaleX:0.96,filter:'blur(10px)'},{opacity:1,y:0,scaleY:1,scaleX:1,filter:'blur(0px)',duration:0.65,ease:'expo.out'},1.6);
+tl.to('#s5-hl',{opacity:0,duration:0.3},2.2);
+// 80% notification
+tl.fromTo('#s5-n1',{opacity:0,y:-120,scale:0.94},{opacity:1,y:0,scale:1,duration:0.6,ease:'expo.out'},3.2);
+// 95% notification replaces it
+tl.to('#s5-n1',{opacity:0,y:30,scale:0.96,duration:0.28,ease:'power3.in'},4.9);
+tl.fromTo('#s5-n2',{opacity:0,y:-120,scale:0.94},{opacity:1,y:0,scale:1,duration:0.6,ease:'expo.out'},5.0);
+// push-in zoom toward the notification
+tl.to('#s5-bar',{opacity:0,duration:0.6,ease:'power2.in'},5.0);
+tl.to('#s5-cam',{scale:1.15,duration:1.0,ease:'power2.inOut'},5.0);
+tl.to('#s5-pop',{opacity:0.35,duration:0.8,ease:'power2.inOut'},5.0);
+tl.to('#root',{opacity:0,duration:0.25,ease:'power2.in'},7.72);
+
+window.__timelines["s5"] = tl;
+})();
+</script>
+</template>

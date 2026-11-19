@@ -1,0 +1,70 @@
+<template>
+<style>
+@font-face{font-family:'QBThai';font-weight:400;src:local('Sukhumvit Set'),local('SukhumvitSet-Text'),local('Thonburi');}
+@font-face{font-family:'QBThai';font-weight:700;src:local('SukhumvitSet-Bold'),local('Sukhumvit Set Bold'),local('Thonburi Bold'),local('Thonburi');}
+#root{position:absolute;inset:0;overflow:hidden;color:#F5F5F7;font-family:Inter,'QBThai',sans-serif;
+  --red:#FF5F57;--yellow:#FFD60A;--green:#30D158;--ink:#F5F5F7;--mute:#98989D;--card:#1C1C1E;}
+#root *{box-sizing:border-box;margin:0;padding:0}
+.cap{position:absolute;left:90px;right:90px;top:210px;text-align:center}
+.en{font-family:Inter,'QBThai',sans-serif;font-weight:700;font-size:80px;line-height:1.08;letter-spacing:-0.025em}
+.th{font-family:'Noto Sans Thai','QBThai',Inter,sans-serif;font-weight:700;font-size:48px;line-height:1.25;color:#B8B8BF;margin-top:22px}
+.abs{position:absolute}
+.letter{display:inline-block;border-radius:14px;color:#fff;font-weight:700;text-align:center}
+.L-C{background:#DA7756}.L-G{background:#10A37F}.L-A{background:#4285F4}
+.batt{position:relative;border:3px solid #6e6e73;border-radius:12px;width:78px;height:36px}
+.batt::after{content:"";position:absolute;right:-9px;top:10px;width:5px;height:12px;border-radius:0 3px 3px 0;background:#6e6e73}
+.batt i{position:absolute;left:4px;top:4px;bottom:4px;border-radius:6px;background:#fff;width:0}
+
+#s3-glow{position:absolute;left:40px;top:480px;width:1000px;height:1000px;background:radial-gradient(closest-side,rgba(255,214,10,.22),rgba(255,214,10,0) 70%);opacity:0}
+#s3-icon{position:absolute;left:250px;top:560px;width:580px;height:580px}
+#s3-icon img{position:absolute;inset:0;width:100%;height:100%;display:block}
+#s3-sweepclip{position:absolute;inset:0;border-radius:130px;overflow:hidden;-webkit-mask-image:linear-gradient(#000,#000)}
+#s3-sweep{position:absolute;top:-20%;left:-300px;width:200px;height:140%;background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.75),rgba(255,255,255,0));transform:skewX(-20deg);mix-blend-mode:overlay}
+#s3-name{position:absolute;left:0;right:0;top:1200px;text-align:center;font-weight:700;font-size:118px;letter-spacing:-0.035em;white-space:nowrap}
+#s3-name span{display:inline-block;opacity:0}
+#s3-caret{display:inline-block;width:8px;height:100px;background:#FFD60A;vertical-align:-8px;margin-left:6px;opacity:0}
+#s3-thai{position:absolute;left:0;right:0;top:1360px;text-align:center}
+.s3-p{position:absolute;border-radius:50%;background:#FFD60A;opacity:0}
+</style>
+<div id="root" data-composition-id="s3" data-width="1080" data-height="1920">
+
+<div id="s3-glow"></div>
+<div id="s3-parts"></div>
+<div id="s3-icon"><img src="assets/icon.png" alt="Quota Battery app icon"><div id="s3-sweepclip"><div id="s3-sweep"></div></div></div>
+<div id="s3-name"><span class="s3-l">Q</span><span class="s3-l">u</span><span class="s3-l">o</span><span class="s3-l">t</span><span class="s3-l">a</span><span class="s3-l">&nbsp;</span><span class="s3-l">B</span><span class="s3-l">a</span><span class="s3-l">t</span><span class="s3-l">t</span><span class="s3-l">e</span><span class="s3-l">r</span><span class="s3-l">y</span></div>
+<div id="s3-thai" class="th" style="margin:0">โควตาเป็นแบตเตอรี่</div>
+
+</div>
+<script>
+(function(){
+function rng(s){return function(){s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
+const tl = gsap.timeline({paused:true});
+
+const r=rng(7);
+const P=document.getElementById('s3-parts');
+for(let i=0;i<46;i++){const d=document.createElement('div');d.className='s3-p';d.id='s3-p'+i;const s=4+r()*9;d.style.width=s+'px';d.style.height=s+'px';d.style.left=(60+r()*960)+'px';d.style.top=(1100+r()*500)+'px';P.appendChild(d);
+  const t0=0.4+r()*2.2;
+  tl.fromTo(d,{opacity:0,y:0,x:0},{opacity:0.9,y:-(600+r()*650),x:(r()-0.5)*120,duration:2.0,ease:'power1.out'},t0);
+  tl.to(d,{opacity:0,duration:0.7,ease:'power1.in'},t0+2.0);
+}
+// icon rises
+tl.fromTo('#s3-icon',{y:260,scale:0.78,opacity:0,filter:'blur(14px)'},{y:0,scale:1,opacity:1,filter:'blur(0px)',duration:1.1,ease:'expo.out'},0.3);
+tl.fromTo('#s3-glow',{opacity:0,scale:0.7},{opacity:1,scale:1,duration:1.4,ease:'power2.out'},0.5);
+// light sweep, twice
+tl.fromTo('#s3-sweep',{x:0},{x:1000,duration:0.9,ease:'power2.inOut'},1.5);
+tl.fromTo('#s3-sweep',{x:0},{x:1000,duration:0.9,ease:'power2.inOut'},5.0);
+// typing letters
+const L=document.querySelectorAll('#s3-name .s3-l');
+
+L.forEach((l,i)=>{tl.fromTo(l,{opacity:0,filter:'blur(6px)',y:8},{opacity:1,filter:'blur(0px)',y:0,duration:0.12,ease:'power2.out'},2.8+i*0.1);});
+// caret blinks as steps
+
+tl.fromTo('#s3-thai',{opacity:0,filter:'blur(6px)',y:12},{opacity:1,filter:'blur(0px)',y:0,duration:0.45,ease:'expo.out'},4.3);
+// icon gentle drift so the hold stays alive
+tl.to('#s3-icon',{y:-14,duration:3.4,ease:'sine.inOut'},1.6);
+tl.to('#root',{opacity:0,duration:0.25,ease:'power2.in'},7.72);
+
+window.__timelines["s3"] = tl;
+})();
+</script>
+</template>

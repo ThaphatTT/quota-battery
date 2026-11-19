@@ -1,0 +1,103 @@
+<template>
+<style>
+@font-face{font-family:'QBThai';font-weight:400;src:local('Sukhumvit Set'),local('SukhumvitSet-Text'),local('Thonburi');}
+@font-face{font-family:'QBThai';font-weight:700;src:local('SukhumvitSet-Bold'),local('Sukhumvit Set Bold'),local('Thonburi Bold'),local('Thonburi');}
+#root{position:absolute;inset:0;overflow:hidden;color:#F5F5F7;font-family:Inter,'QBThai',sans-serif;
+  --red:#FF5F57;--yellow:#FFD60A;--green:#30D158;--ink:#F5F5F7;--mute:#98989D;--card:#1C1C1E;}
+#root *{box-sizing:border-box;margin:0;padding:0}
+.cap{position:absolute;left:90px;right:90px;top:210px;text-align:center}
+.en{font-family:Inter,'QBThai',sans-serif;font-weight:700;font-size:80px;line-height:1.08;letter-spacing:-0.025em}
+.th{font-family:'Noto Sans Thai','QBThai',Inter,sans-serif;font-weight:700;font-size:48px;line-height:1.25;color:#B8B8BF;margin-top:22px}
+.abs{position:absolute}
+.letter{display:inline-block;border-radius:14px;color:#fff;font-weight:700;text-align:center}
+.L-C{background:#DA7756}.L-G{background:#10A37F}.L-A{background:#4285F4}
+.batt{position:relative;border:3px solid #6e6e73;border-radius:12px;width:78px;height:36px}
+.batt::after{content:"";position:absolute;right:-9px;top:10px;width:5px;height:12px;border-radius:0 3px 3px 0;background:#6e6e73}
+.batt i{position:absolute;left:4px;top:4px;bottom:4px;border-radius:6px;background:#fff;width:0}
+
+#s1-glow{position:absolute;left:-200px;right:-200px;top:480px;height:1100px;background:radial-gradient(closest-side,rgba(255,95,87,.30),rgba(255,95,87,0) 70%)}
+#s1-batt{position:absolute;left:190px;top:800px;width:700px;height:350px;border:22px solid #fff;border-radius:78px}
+#s1-nub{position:absolute;left:896px;top:910px;width:40px;height:130px;border-radius:0 20px 20px 0;background:#fff}
+#s1-fill{position:absolute;left:14px;top:14px;bottom:14px;width:56px;border-radius:38px;background:var(--red);box-shadow:0 0 60px rgba(255,95,87,.9)}
+#s1-pct{position:absolute;left:0;right:0;top:1240px;text-align:center;font-weight:900;font-size:190px;letter-spacing:-0.04em;color:var(--red)}
+#s1-pct small{display:block;font-size:52px;font-weight:700;letter-spacing:0;color:#B8B8BF;margin-top:-6px}
+.s1-h{position:absolute;left:90px;right:90px;top:210px;text-align:center}
+#s1-hr,#s1-hc{opacity:0;mix-blend-mode:screen}
+#s1-hr{color:#ff2d55}#s1-hc{color:#2dd4ff}
+.s1-sp{position:absolute;width:6px;height:56px;border-radius:3px;background:linear-gradient(#fff,#FFD60A 60%,rgba(255,95,87,0));opacity:0;transform-origin:50% 100%}
+#s1-scan{position:absolute;left:0;right:0;height:140px;top:-200px;background:linear-gradient(rgba(255,95,87,0),rgba(255,95,87,.16),rgba(255,95,87,0))}
+</style>
+<div id="root" data-composition-id="s1" data-width="1080" data-height="1920">
+
+<div id="s1-glow"></div>
+<div id="s1-scan"></div>
+<div id="s1-hwrap" class="s1-h">
+  <div id="s1-hm" data-layout-allow-overlap><div class="en">When does your AI run out?</div></div>
+  <div id="s1-hr" data-layout-ignore class="abs" style="left:0;right:0;top:0"><div class="en">When does your AI run out?</div></div>
+  <div id="s1-hc" data-layout-ignore class="abs" style="left:0;right:0;top:0"><div class="en">When does your AI run out?</div></div>
+  <div class="th" id="s1-th">AI ของคุณจะหมดเมื่อไหร่?</div>
+</div>
+<div id="s1-bw" class="abs" style="left:0;top:0;width:1080px;height:1920px">
+  <div id="s1-batt"><div id="s1-fill"></div></div><div id="s1-nub"></div>
+  <div id="s1-sparks"></div>
+  <div id="s1-pct">5%<small>left</small></div>
+</div>
+
+</div>
+<script>
+(function(){
+function rng(s){return function(){s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
+const tl = gsap.timeline({paused:true});
+
+const r = rng(11);
+// sparks
+const sp = document.getElementById('s1-sparks');
+for(let i=0;i<14;i++){const d=document.createElement('div');d.className='s1-sp';d.id='s1-sp'+i;d.style.left='918px';d.style.top='975px';sp.appendChild(d);}
+const blinks=[0,0.9,1.8,2.7,3.6,4.5];
+// entrance of the battery (hook frame 0 already readable)
+tl.fromTo('#s1-bw',{scale:1.06,transformOrigin:'540px 975px'},{scale:1,duration:0.6,ease:'expo.out'},0);
+tl.fromTo('#s1-glow',{opacity:0.4},{opacity:1,duration:0.5,ease:'power2.out'},0);
+// blink: fill + glow flash on every beat
+blinks.forEach((t,i)=>{
+  tl.fromTo('#s1-fill',{opacity:0.12},{opacity:1,duration:0.06,ease:'power1.out'},t);
+  tl.to('#s1-fill',{opacity:0.12,duration:0.1,ease:'power2.in'},t+0.5);
+  tl.fromTo('#s1-pct',{opacity:0.25},{opacity:1,duration:0.06,ease:'power1.out'},t);
+  tl.to('#s1-pct',{opacity:0.25,duration:0.1,ease:'power2.in'},t+0.5);
+  tl.fromTo('#s1-glow',{opacity:0.45},{opacity:1,duration:0.08},t);
+  tl.to('#s1-glow',{opacity:0.45,duration:0.4,ease:'power2.in'},t+0.1);
+  tl.fromTo('#s1-batt',{borderColor:'#FF5F57'},{borderColor:'#ffffff',duration:0.4,ease:'power2.out'},t);
+  // sparks on beats 1,3,5
+  if(i%2===1||i===0){
+    for(let k=0;k<7;k++){
+      const id='#s1-sp'+k; const ang=(-70+ k*23.5 + (i*7))*Math.PI/180; const dist=110+r()*130;
+      tl.fromTo(id,{opacity:1,x:0,y:0,rotation:(ang*180/Math.PI)+90,scaleY:1},
+        {opacity:0,x:Math.cos(ang)*dist,y:Math.sin(ang)*dist,scaleY:0.2,duration:0.38,ease:'power3.out'},t+ (k%2)*0.02);
+    }
+  }
+});
+// glitch bursts on the headline: at 0.12, 3.0, 5.0
+[[0.12,0.28],[3.0,0.24],[5.0,0.3]].forEach(([t,d])=>{
+  const steps=Math.round(d*30);
+  for(let s=0;s<steps;s++){
+    const tt=t+s/30; const dx=(r()-0.5)*40, dy=(r()-0.5)*8;
+    tl.set('#s1-hr',{opacity:0.9,x:dx,y:dy},tt);
+    tl.set('#s1-hc',{opacity:0.9,x:-dx*0.8,y:-dy},tt);
+    tl.set('#s1-hm',{x:(r()-0.5)*14,skewX:(r()-0.5)*8},tt);
+  }
+  tl.set('#s1-hr',{opacity:0,x:0,y:0},t+d);
+  tl.set('#s1-hc',{opacity:0,x:0,y:0},t+d);
+  tl.set('#s1-hm',{x:0,skewX:0},t+d);
+});
+// scan line sweeps down once
+tl.fromTo('#s1-scan',{y:0},{y:2200,duration:2.4,ease:'none'},0.3);
+tl.fromTo('#s1-scan',{y:0},{y:2200,duration:2.4,ease:'none'},3.3);
+// thai subtitle arrives after the hook
+tl.fromTo('#s1-th',{opacity:0,y:14,filter:'blur(6px)'},{opacity:1,y:0,filter:'blur(0px)',duration:0.4,ease:'expo.out'},0.5);
+// out: dip to red then fade
+tl.to('#root',{opacity:0,duration:0.22,ease:'power2.in'},5.78);
+tl.set('#root',{opacity:1},0);
+
+window.__timelines["s1"] = tl;
+})();
+</script>
+</template>

@@ -1,0 +1,86 @@
+<template>
+<style>
+@font-face{font-family:'QBThai';font-weight:400;src:local('Sukhumvit Set'),local('SukhumvitSet-Text'),local('Thonburi');}
+@font-face{font-family:'QBThai';font-weight:700;src:local('SukhumvitSet-Bold'),local('Sukhumvit Set Bold'),local('Thonburi Bold'),local('Thonburi');}
+#root{position:absolute;inset:0;overflow:hidden;color:#F5F5F7;font-family:Inter,'QBThai',sans-serif;
+  --red:#FF5F57;--yellow:#FFD60A;--green:#30D158;--ink:#F5F5F7;--mute:#98989D;--card:#1C1C1E;}
+#root *{box-sizing:border-box;margin:0;padding:0}
+.cap{position:absolute;left:90px;right:90px;top:210px;text-align:center}
+.en{font-family:Inter,'QBThai',sans-serif;font-weight:700;font-size:80px;line-height:1.08;letter-spacing:-0.025em}
+.th{font-family:'Noto Sans Thai','QBThai',Inter,sans-serif;font-weight:700;font-size:48px;line-height:1.25;color:#B8B8BF;margin-top:22px}
+.abs{position:absolute}
+.letter{display:inline-block;border-radius:14px;color:#fff;font-weight:700;text-align:center}
+.L-C{background:#DA7756}.L-G{background:#10A37F}.L-A{background:#4285F4}
+.batt{position:relative;border:3px solid #6e6e73;border-radius:12px;width:78px;height:36px}
+.batt::after{content:"";position:absolute;right:-9px;top:10px;width:5px;height:12px;border-radius:0 3px 3px 0;background:#6e6e73}
+.batt i{position:absolute;left:4px;top:4px;bottom:4px;border-radius:6px;background:#fff;width:0}
+
+#s4-bgglow{position:absolute;left:0;right:0;top:420px;height:1000px;background:radial-gradient(closest-side,rgba(48,209,88,.10),rgba(0,0,0,0) 70%)}
+#s4-persp{position:absolute;left:0;top:700px;width:1080px;height:780px;perspective:1500px}
+#s4-tilt{position:absolute;left:66px;top:60px;width:946px;transform-style:preserve-3d}
+#s4-card{position:relative;width:728px;height:395px;transform:scale(1.3);transform-origin:0 0;background:#262628;border-radius:34px;box-shadow:0 60px 120px rgba(0,0,0,.65),0 0 0 2px #3a3a3c inset;transform-style:preserve-3d;font-size:26px}
+#s4-shinewrap{position:absolute;inset:0;border-radius:34px;overflow:hidden;pointer-events:none}
+#s4-card .ttl{position:absolute;left:32px;top:14px;font-size:26px;font-weight:700;color:#d8d8dc}
+#s4-card .upd{position:absolute;right:34px;top:18px;font-size:22px;color:#8e8e93;font-weight:700}
+.s4-row{position:absolute;left:32px;right:32px;height:105px;border-top:1px solid #3a3a3c}
+.s4-row .letter{position:absolute;left:0;top:18px;width:40px;height:40px;line-height:40px;font-size:24px;border-radius:9px}
+.s4-row .nm{position:absolute;left:56px;top:16px;font-size:26px;font-weight:700;color:#ececf0;white-space:nowrap}
+.s4-row .nm span{font-size:22px;color:#8e8e93;font-weight:700;margin-left:8px}
+.s4-row .pill{position:absolute;right:204px;top:28px;padding:2px 14px;border-radius:15px;font-size:22px;font-weight:700;opacity:0}
+.s4-row .left{position:absolute;right:76px;top:6px;font-size:27px;font-weight:900;text-align:right}
+.s4-row .used{position:absolute;right:76px;top:38px;font-size:22px;color:#8e8e93;font-weight:700;text-align:right}
+.s4-row .batt{position:absolute;right:0;top:20px;width:56px;height:30px;border-width:2px;border-radius:9px}
+.s4-row .batt i{left:3px;top:3px;bottom:3px;border-radius:5px}
+.s4-row .batt::after{right:-7px;top:8px;width:4px;height:10px}
+#s4-shine{position:absolute;inset:0;background:linear-gradient(105deg,rgba(255,255,255,0) 40%,rgba(255,255,255,.14) 50%,rgba(255,255,255,0) 60%);transform:translateX(-120%)}
+</style>
+<div id="root" data-composition-id="s4" data-width="1080" data-height="1920">
+
+<div id="s4-bgglow"></div>
+<div class="cap"><div class="en" id="s4-en">See what's left at a glance</div><div class="th" id="s4-th">เห็นโควตาที่เหลือในพริบตา</div></div>
+<div id="s4-persp"><div id="s4-tilt"><div id="s4-card"><div class="ttl">Quota Battery</div><div class="upd">Updated 2 min ago</div><div class="s4-row" id="s4-r1" style="top:68px"><div class="letter L-C">C</div><div class="nm">Claude<span>Week</span></div><div class="pill" id="s4-r1-pill">Almost out</div><div class="left" id="s4-r1-left">100% left</div><div class="used" id="s4-r1-used">0% used</div><div class="batt"><i id="s4-r1-fill"></i></div></div>
+<div class="s4-row" id="s4-r2" style="top:173px"><div class="letter L-G">G</div><div class="nm">ChatGPT<span>Week</span></div><div class="pill" id="s4-r2-pill">Almost out</div><div class="left" id="s4-r2-left">100% left</div><div class="used" id="s4-r2-used">0% used</div><div class="batt"><i id="s4-r2-fill"></i></div></div>
+<div class="s4-row" id="s4-r3" style="top:278px"><div class="letter L-A">A</div><div class="nm">agy<span>Gemini Pro</span></div><div class="pill" id="s4-r3-pill">Almost out</div><div class="left" id="s4-r3-left">100% left</div><div class="used" id="s4-r3-used">0% used</div><div class="batt"><i id="s4-r3-fill"></i></div></div><div id="s4-shinewrap"><div id="s4-shine"></div></div></div></div></div>
+
+</div>
+<script>
+(function(){
+function rng(s){return function(){s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
+const tl = gsap.timeline({paused:true});
+
+function setRow(k,v){
+  const left=Math.round(v), used=100-left;
+  let col='#ffffff', pc=null;
+  if(left<=5){col='#FF5F57';pc='r'} else if(left<=20){col='#FFD60A';pc='y'}
+  const L=document.getElementById('s4-'+k+'-left'),U=document.getElementById('s4-'+k+'-used'),F=document.getElementById('s4-'+k+'-fill'),P=document.getElementById('s4-'+k+'-pill');
+  L.textContent=left+'% left';L.style.color=col;U.textContent=used+'% used';
+  F.style.width=Math.max(2,(v/100)*(56-6-4))+'px';F.style.background=col;
+  const b=F.parentNode;b.style.borderColor=pc==='r'?'#FF5F57':'#6e6e73';
+  if(pc){P.style.opacity=1;P.style.color=col;P.style.background=pc==='r'?'rgba(255,95,87,.2)':'rgba(255,214,10,.2)';} else {P.style.opacity=0;}
+}
+const state={r1:{v:100},r2:{v:100},r3:{v:100}};
+['r1','r2','r3'].forEach(k=>setRow(k,100));
+const plan={r1:[60,1.6,4.2],r2:[15,2.0,6.4],r3:[5,2.4,8.2]};
+Object.keys(plan).forEach(k=>{const [to,t,d]=plan[k];
+  tl.to(state[k],{v:to,duration:d,ease:'power2.inOut',onUpdate:()=>setRow(k,state[k].v)},t);});
+// text in
+tl.fromTo('#s4-en',{opacity:0,filter:'blur(8px)'},{opacity:1,filter:'blur(0px)',duration:0.3,ease:'expo.out'},0.1);
+tl.fromTo('#s4-th',{opacity:0,filter:'blur(6px)'},{opacity:1,filter:'blur(0px)',duration:0.3,ease:'expo.out'},0.35);
+// card arrives and tilts in 3D, then settles
+tl.fromTo('#s4-tilt',{opacity:0,y:120,rotateY:-30,rotateX:20,transformOrigin:'50% 50%'},{opacity:1,y:0,rotateY:-9,rotateX:5,duration:1.2,ease:'expo.out'},0.2);
+tl.to('#s4-tilt',{rotateY:7,rotateX:3,duration:5.2,ease:'sine.inOut'},1.4);
+tl.to('#s4-tilt',{rotateY:0,rotateX:0,duration:1.6,ease:'power3.out'},6.8);
+// depth: rows lift off the card
+['r1','r2','r3'].forEach((k,i)=>{tl.fromTo('#s4-'+k,{z:0},{z:40+i*12,duration:1.0,ease:'power2.out'},0.8+i*0.1);});
+// shine sweep
+tl.fromTo('#s4-shine',{x:'-120%'},{x:'120%',duration:1.0,ease:'power2.inOut'},1.2);
+tl.fromTo('#s4-shine',{x:'-120%'},{x:'120%',duration:1.0,ease:'power2.inOut'},8.8);
+// red pulse of the last row at the end
+for(let k=0;k<3;k++){tl.fromTo('#s4-r3-fill',{opacity:0.2},{opacity:1,duration:0.15},9.7+k*0.6);tl.to('#s4-r3-fill',{opacity:0.2,duration:0.25},9.9+k*0.6);}
+tl.to('#s4-r3-fill',{opacity:1,duration:0.1},11.6);
+tl.to('#root',{opacity:0,duration:0.25,ease:'power2.in'},11.72);
+
+window.__timelines["s4"] = tl;
+})();
+</script>
+</template>

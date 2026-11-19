@@ -1,0 +1,85 @@
+<template>
+<style>
+@font-face{font-family:'QBThai';font-weight:400;src:local('Sukhumvit Set'),local('SukhumvitSet-Text'),local('Thonburi');}
+@font-face{font-family:'QBThai';font-weight:700;src:local('SukhumvitSet-Bold'),local('Sukhumvit Set Bold'),local('Thonburi Bold'),local('Thonburi');}
+#root{position:absolute;inset:0;overflow:hidden;color:#F5F5F7;font-family:Inter,'QBThai',sans-serif;
+  --red:#FF5F57;--yellow:#FFD60A;--green:#30D158;--ink:#F5F5F7;--mute:#98989D;--card:#1C1C1E;}
+#root *{box-sizing:border-box;margin:0;padding:0}
+.cap{position:absolute;left:90px;right:90px;top:210px;text-align:center}
+.en{font-family:Inter,'QBThai',sans-serif;font-weight:700;font-size:80px;line-height:1.08;letter-spacing:-0.025em}
+.th{font-family:'Noto Sans Thai','QBThai',Inter,sans-serif;font-weight:700;font-size:48px;line-height:1.25;color:#B8B8BF;margin-top:22px}
+.abs{position:absolute}
+.letter{display:inline-block;border-radius:14px;color:#fff;font-weight:700;text-align:center}
+.L-C{background:#DA7756}.L-G{background:#10A37F}.L-A{background:#4285F4}
+.batt{position:relative;border:3px solid #6e6e73;border-radius:12px;width:78px;height:36px}
+.batt::after{content:"";position:absolute;right:-9px;top:10px;width:5px;height:12px;border-radius:0 3px 3px 0;background:#6e6e73}
+.batt i{position:absolute;left:4px;top:4px;bottom:4px;border-radius:6px;background:#fff;width:0}
+
+.cap{top:190px}
+#s7-glow{position:absolute;left:0;right:0;top:420px;height:1100px;background:radial-gradient(closest-side,rgba(48,209,88,.30),rgba(48,209,88,0) 70%);opacity:0}
+#s7-bw{position:absolute;left:0;top:0;width:1080px;height:1920px}
+#s7-batt{position:absolute;left:250px;top:580px;width:580px;height:290px;border:20px solid #fff;border-radius:68px}
+#s7-nub{position:absolute;left:836px;top:665px;width:34px;height:120px;border-radius:0 17px 17px 0;background:#fff}
+#s7-fill{position:absolute;left:12px;top:12px;bottom:12px;width:50px;border-radius:48px;background:var(--red)}
+#s7-pct{position:absolute;left:0;right:0;top:905px;text-align:center;font-weight:900;font-size:80px;letter-spacing:-0.02em}
+#s7-lock{position:absolute;left:0;right:0;top:1050px;height:190px;display:flex;align-items:center;justify-content:center;gap:34px}
+#s7-lock img{width:176px;height:176px;display:block}
+#s7-lock b{font-size:100px;letter-spacing:-0.035em;font-weight:700;white-space:nowrap}
+#s7-link{position:absolute;left:50%;margin-left:-460px;width:920px;top:1290px;height:116px;border-radius:58px;background:#1C1C1E;border:2px solid #3a3a3c;display:flex;align-items:center;justify-content:center;font-size:44px;font-weight:700;overflow:hidden}
+#s7-link .sw{position:absolute;top:0;bottom:0;left:-270px;width:220px;background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.28),rgba(255,255,255,0));transform:skewX(-20deg)}
+#s7-link span{position:relative;color:#f5f5f7}
+#s7-link em{font-style:normal;color:#30D158;position:relative;margin-right:2px}
+#s7-win{position:absolute;left:50%;margin-left:-330px;width:660px;top:1440px;height:84px;border-radius:42px;background:rgba(48,209,88,.14);border:2px solid rgba(48,209,88,.5);display:flex;align-items:center;justify-content:center;font-size:38px;font-weight:700;color:#7ee29a}
+#s7-wth{position:absolute;left:0;right:0;top:1540px;text-align:center;margin:0}
+#s7-flash{position:absolute;inset:0;background:radial-gradient(closest-side at 540px 725px,rgba(255,255,255,.8),rgba(255,255,255,0) 60%);opacity:0}
+</style>
+<div id="root" data-composition-id="s7" data-width="1080" data-height="1920">
+
+<div id="s7-glow"></div>
+<div class="cap"><div class="en" id="s7-en">Free and open source</div><div class="th" id="s7-th">ฟรีและโอเพนซอร์ส</div></div>
+<div id="s7-bw"><div id="s7-batt"><div id="s7-fill"></div></div><div id="s7-nub"></div><div id="s7-pct">5%</div></div>
+<div id="s7-flash"></div>
+<div id="s7-lock"><img src="assets/icon.png" alt="Quota Battery icon"><b>Quota Battery</b></div>
+<div id="s7-link"><span><em>github.com/</em>ThaphatTT/quota-battery</span><div class="sw" id="s7-sw"></div></div>
+<div id="s7-win">For macOS and iOS</div>
+<div id="s7-wth" class="th">สำหรับ macOS และ iOS</div>
+
+</div>
+<script>
+(function(){
+function rng(s){return function(){s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
+const tl = gsap.timeline({paused:true});
+
+const st={v:5};
+const stops=[[0,'#FF5F57'],[0.05,'#FF5F57'],[0.2,'#FFD60A'],[1,'#30D158']];
+function colorAt(f){for(let i=1;i<stops.length;i++){if(f<=stops[i][0]){const a=stops[i-1],b=stops[i];const k=(f-a[0])/(b[0]-a[0]||1);return gsap.utils.interpolate(a[1],b[1],k);}}return stops[stops.length-1][1];}
+function paint(){const f=st.v/100;const W=Math.round(f*(580-40-24));const F=document.getElementById('s7-fill');
+  F.style.width=Math.max(50,W)+'px';const c=colorAt(f);F.style.background=c;F.style.boxShadow='0 0 '+(20+60*f)+'px '+c;
+  const P=document.getElementById('s7-pct');P.textContent=Math.round(st.v)+'%';P.style.color=c;}
+paint();
+tl.fromTo('#s7-en',{opacity:0,filter:'blur(8px)'},{opacity:1,filter:'blur(0px)',duration:0.3,ease:'expo.out'},0.1);
+tl.fromTo('#s7-th',{opacity:0,filter:'blur(6px)'},{opacity:1,filter:'blur(0px)',duration:0.3,ease:'expo.out'},0.35);
+tl.fromTo('#s7-bw',{opacity:0,scale:0.9,transformOrigin:'540px 725px'},{opacity:1,scale:1,duration:0.7,ease:'expo.out'},0.5);
+// charge to full
+tl.to(st,{v:100,duration:3.0,ease:'power2.inOut',onUpdate:paint},1.2);
+tl.fromTo('#s7-glow',{opacity:0},{opacity:1,duration:3.0,ease:'power2.in'},1.2);
+// full: flash + battery outline turns green
+tl.to('#s7-batt',{borderColor:'#30D158',duration:0.3,ease:'power2.out'},4.2);
+tl.to('#s7-nub',{backgroundColor:'#30D158',duration:0.3,ease:'power2.out'},4.2);
+tl.fromTo('#s7-flash',{opacity:0.4},{opacity:0,duration:0.6,ease:'power2.out'},4.2);
+tl.fromTo('#s7-bw',{scale:1},{scale:1.06,duration:0.12,ease:'power2.out',yoyo:true,repeat:1,transformOrigin:'540px 725px'},4.2);
+// lockup
+tl.fromTo('#s7-lock',{opacity:0,y:50,filter:'blur(10px)',scale:0.94},{opacity:1,y:0,filter:'blur(0px)',scale:1,duration:0.7,ease:'expo.out'},4.5);
+tl.fromTo('#s7-link',{opacity:0,y:40,filter:'blur(8px)'},{opacity:1,y:0,filter:'blur(0px)',duration:0.55,ease:'expo.out'},5.5);
+tl.fromTo('#s7-sw',{x:0},{x:1300,duration:0.9,ease:'power2.inOut'},6.1);
+tl.fromTo('#s7-win',{opacity:0,y:40,filter:'blur(8px)'},{opacity:1,y:0,filter:'blur(0px)',duration:0.55,ease:'expo.out'},6.6);
+tl.fromTo('#s7-wth',{opacity:0,y:20,filter:'blur(6px)'},{opacity:1,y:0,filter:'blur(0px)',duration:0.45,ease:'expo.out'},6.9);
+// ends alive: soft glow breath + second sweep on the link, then fade to black over the last 0.5 s
+tl.fromTo('#s7-sw',{x:0},{x:1300,duration:0.9,ease:'power2.inOut'},8.2);
+tl.to('#s7-glow',{opacity:0.6,duration:2.0,ease:'sine.inOut'},7.2);
+tl.to('#root',{opacity:0,duration:0.5,ease:'power2.inOut'},9.5);
+
+window.__timelines["s7"] = tl;
+})();
+</script>
+</template>

@@ -39,8 +39,17 @@ The numbers below are samples.
         { "key": "seven_day", "label": "สัปดาห์", "window_seconds": 604800, "used_percent": 60.0, "resets_at": "2026-11-24T02:00:00Z" }
       ],
       "usage": {
-        "today": { "tokens": 1000000, "cost_usd": 10.0 },
-        "month": { "tokens": 20000000, "cost_usd": 300.0 }
+        "today": {
+          "tokens": 1000000, "cost_usd": 10.0,
+          "by_family": {
+            "opus":   { "input": 400000, "output": 20000, "cache_write_5m": 50000, "cache_write_1h": 0, "cache_read": 900000 },
+            "sonnet": { "input": 300000, "output": 30000, "cache_write_5m": 0, "cache_write_1h": 0, "cache_read": 0 },
+            "haiku":  { "input": 0, "output": 0, "cache_write_5m": 0, "cache_write_1h": 0, "cache_read": 0 },
+            "fable":  { "input": 0, "output": 0, "cache_write_5m": 0, "cache_write_1h": 0, "cache_read": 0 },
+            "other":  { "input": 0, "output": 0, "cache_write_5m": 0, "cache_write_1h": 0, "cache_read": 0 }
+          }
+        },
+        "month": { "tokens": 20000000, "cost_usd": 300.0, "by_family": { "opus": { "input": 0, "output": 0, "cache_write_5m": 0, "cache_write_1h": 0, "cache_read": 0 }, "sonnet": { "input": 0, "output": 0, "cache_write_5m": 0, "cache_write_1h": 0, "cache_read": 0 }, "haiku": { "input": 0, "output": 0, "cache_write_5m": 0, "cache_write_1h": 0, "cache_read": 0 }, "fable": { "input": 0, "output": 0, "cache_write_5m": 0, "cache_write_1h": 0, "cache_read": 0 }, "other": { "input": 0, "output": 0, "cache_write_5m": 0, "cache_write_1h": 0, "cache_read": 0 } } }
       },
       "credits": { "extra_usage_enabled": true, "used_usd": 0, "limit_usd": 50, "balance_usd": null }
     },
@@ -64,9 +73,15 @@ The numbers below are samples.
       "usage": null,
       "credits": null
     }
-  ]
+  ],
+  "model_prices": {
+    "claude-opus-5-5": { "family": "opus", "label": "Opus 5.5", "input": 4.0, "cache_write_5m": 5.0, "cache_write_1h": 8.0, "cache_read": 0.2, "output": 20.0 }
+  }
 }
 ```
+
+The example above lists the shape. `model_prices` is shown with one model only; the file has the four
+models below.
 
 ## Field rules
 
@@ -110,6 +125,53 @@ The numbers below are samples.
 - `usage`: can be `null`. `cost_usd` is an estimate at API list prices, or `null` when unknown.
   For Claude, `tokens` counts input, output and cache writes. Cache reads are left out of that count,
   but they are included in `cost_usd`.
+  For Codex, `tokens` is the `total_tokens` the log gives for each turn. `cost_usd` is the sum of the turn costs
+  at the GPT prices in `model_prices`. Each turn is priced on its own: a turn whose `input_tokens` is above
+  272,000 uses the long-context rates for the whole turn. A turn whose model has no price (or no model in the
+  log) is counted in `tokens` and makes `cost_usd` `null` for that window. Codex turns are read from the
+  per-turn `last_token_usage`, never the running total, and a turn that appears twice (for example in a resumed
+  session's copy) is counted once.
+- `usage.today.by_family` and `usage.month.by_family` (optional, Claude accounts only): token counts per model
+  family and kind, the same window as `tokens`. The keys are `opus`, `sonnet`, `haiku`, `fable` and `other`. Each
+  holds `input`, `output`, `cache_write_5m`, `cache_write_1h` and `cache_read`, all integers. A model is put in a
+  family by its id prefix (`claude-opus-*`, `claude-sonnet-*`, `claude-haiku-*`, `claude-fable-*`, so Opus 4.8
+  and Opus 5.5 are both `opus`). A Claude id that matches no family goes to `other`. `other` counts only in the
+  totals. `tokens` is unchanged: it leaves out `cache_read`, as before. Codex and agy have no `by_family`.
+- `usage.today.by_model` and `usage.month.by_model` (optional, Codex accounts only): token counts per model and
+  kind, the same window as `tokens`. The keys are the model ids: `gpt-6-luna`, `gpt-6.2-sol` and `gpt-6.1-sol`
+  always appear (zero when unused), and any other model seen in the window appears under its logged name (lower
+  case, 64 characters at most), or `unknown` when the log names no model. Each holds `input`, `cached_input`,
+  `cache_write`, `output` and `reasoning`, all integers:
+  - `input` is the plain input: `input_tokens` minus `cached_input_tokens`.
+  - `cached_input` is `cached_input_tokens`.
+  - `cache_write` is `cache_write_input_tokens`. It is kept apart from `input`.
+  - `output` is `output_tokens`.
+  - `reasoning` is `reasoning_output_tokens`, as logged. It is billed as output only when the log says the output
+    count leaves reasoning out (`last_usage_includes_reasoning` is `false`). When the flag is `true` or missing,
+    reasoning is already in `output` and is not billed twice.
+  - `long_context` (optional, only when the model had a turn above 272,000 input tokens in the window): the same
+    five kinds, holding only the tokens of those turns. The top-level kinds above keep the total (short and long
+    turns together), so `long_context` is a subset of the totals: `long_context` ⊆ totals. A reader prices the
+    short part `total − long_context` at the normal rates, and `long_context` at the `long_context` rates of
+    `model_prices`. The long cache write uses the short cache write rate, as `cost_usd` does. Readers that
+    ignore `long_context` still get the right totals.
+  The model of a turn is the model of the latest `turn_context` line before its `token_count` event.
+  A turn is long when its `input_tokens` is above 272,000 (exactly 272,000 is short). The `cost_usd` of the window
+  is this same split, so the sum of the short part at normal rates and the long part at long rates gives it.
+  The reasoning added as output in the rare case of a log flag `false` (see above) is not in `by_model`, so a
+  reader cannot price that part from `by_model` alone. Real Codex logs do not set the flag, so it does not occur.
+- `model_prices` (optional, top level, once per file, not per account): the API list price in USD per million
+  tokens, keyed by model id. Each entry has `provider`, `family`, `label` and the prices. `provider` is
+  `anthropic` for the four latest Claude models (`Opus 5.5`, `Sonnet 5.5`, `Haiku 5.5`, `Fable 5.2`). Their
+  prices are `input`, `cache_write_5m`, `cache_write_1h`, `cache_read` and `output`. Haiku 5.5 is the base tier
+  (prompts up to 100k tokens). `provider` is `openai` for `gpt-6-luna`, `gpt-6.2-sol` and `gpt-6.1-sol`. Their
+  prices are `input`, `cached_input`, `cache_write` (the 30-minute rate) and `output`, and `long_context` holds
+  `threshold` (272000: a turn with more input than that), `input`, `cached_input` and `output`. The long-context
+  table has no cache write rate, so `cache_write` applies there too. The numbers come from the collector's price
+  tables (source and read date in the code comments).
+  The Mac app uses them for the estimated monthly cost. A subscription plan does not pay these amounts.
+- Readers that do not know `by_family` or `model_prices` ignore them. The app hides the model-mix section when
+  either field is missing, so an older file keeps working.
 - `credits`: can be `null`. Any money field can be `null`.
 - Widgets draw the quota that is left (`100 - used_percent`). They turn yellow at `used_percent >= 80`
   and red at `used_percent >= 95`. The collector sends a macOS notification once per window

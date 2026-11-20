@@ -17,16 +17,21 @@ struct UsageDocument: Equatable, Decodable {
     var schema: Int?
     var generatedAt: Date?
     var accounts: [UsageAccount]
+    /// The Claude model prices from `model_prices` (one copy for the file, keyed by model id). Nil in files written
+    /// before the field existed, which hides the model mix section.
+    var modelPrices: [String: ModelPrice]?
 
     private enum CodingKeys: String, CodingKey {
         case schema, accounts
         case generatedAt = "generated_at"
+        case modelPrices = "model_prices"
     }
 
-    init(schema: Int?, generatedAt: Date?, accounts: [UsageAccount]) {
+    init(schema: Int?, generatedAt: Date?, accounts: [UsageAccount], modelPrices: [String: ModelPrice]? = nil) {
         self.schema = schema
         self.generatedAt = generatedAt
         self.accounts = accounts
+        self.modelPrices = modelPrices
     }
 
     init(from decoder: Decoder) throws {
@@ -35,6 +40,9 @@ struct UsageDocument: Equatable, Decodable {
         generatedAt = UsageDate.parse(try? c.decodeIfPresent(String.self, forKey: .generatedAt))
         accounts = (try? c.decodeIfPresent([Lossy<UsageAccount>].self, forKey: .accounts))?
             .compactMap { $0.value } ?? []
+        // One entry at a time: an entry in a shape this version does not know drops only itself.
+        modelPrices = (try? c.decodeIfPresent([String: Lossy<ModelPrice>].self, forKey: .modelPrices))?
+            .compactMapValues { $0.value }
     }
 }
 
@@ -113,10 +121,33 @@ struct UsageSummary: Equatable, Decodable {
 struct UsageBucket: Equatable, Decodable {
     var tokens: Double?
     var costUsd: Double?
+    /// Claude tokens per model family (`opus`, `sonnet`, `haiku`, `fable`, `other`). Nil in files written before the
+    /// field existed, and when a family entry is malformed the field is nil.
+    var byFamily: [String: FamilyTokens]?
+    /// ChatGPT (Codex) tokens per model id. Nil when the account has none. See `OpenAIModelTokens`.
+    var byModel: [String: OpenAIModelTokens]?
 
     private enum CodingKeys: String, CodingKey {
         case tokens
         case costUsd = "cost_usd"
+        case byFamily = "by_family"
+        case byModel = "by_model"
+    }
+
+    init(tokens: Double?, costUsd: Double?, byFamily: [String: FamilyTokens]? = nil, byModel: [String: OpenAIModelTokens]? = nil) {
+        self.tokens = tokens
+        self.costUsd = costUsd
+        self.byFamily = byFamily
+        self.byModel = byModel
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        tokens = try c.decodeIfPresent(Double.self, forKey: .tokens)
+        costUsd = try c.decodeIfPresent(Double.self, forKey: .costUsd)
+        byFamily = try? c.decodeIfPresent([String: FamilyTokens].self, forKey: .byFamily)
+        byModel = (try? c.decodeIfPresent([String: Lossy<OpenAIModelTokens>].self, forKey: .byModel))?
+            .compactMapValues { $0.value }
     }
 }
 

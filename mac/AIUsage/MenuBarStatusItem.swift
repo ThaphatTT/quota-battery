@@ -75,6 +75,8 @@ final class MenuBarStatusItem: ObservableObject {
 
     /// Sets the used percent to show. Nil means there is no data.
     func set(percent: Double?) {
+        // The same value, with nothing gliding or pulsing: the image already shows it, so nothing is drawn again.
+        if percent == target, shown == target, timer == nil, pulseStart == nil { return }
         let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if AppUsageInsights.crossedAlert(previous: target, current: percent), !reduced {
             pulseStart = Date()

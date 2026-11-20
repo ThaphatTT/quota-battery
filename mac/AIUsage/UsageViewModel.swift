@@ -21,6 +21,9 @@ final class UsageViewModel: ObservableObject {
     @Published private(set) var accountNotice: AccountNotice?
     /// The direct mode switches for ChatGPT and agy, as settings.json holds them. Claude has none.
     @Published private(set) var directMode: DirectModeSettings
+    /// The model mix order and what-if percentages of each account, as settings.json `model_mix` holds them. An account
+    /// with no entry uses the defaults.
+    @Published private(set) var modelMixSettings: [String: ModelMixSettings]
 
     /// The menu bar label. It is updated on every reload.
     let statusItem = MenuBarStatusItem()
@@ -35,24 +38,48 @@ final class UsageViewModel: ObservableObject {
     private var notifySwitch: NSKeyValueObservation?
     /// An account change asked for a collector run while one was already running. That run starts again when it ends.
     private var runAgainAfterRefresh = false
+    /// How the three files looked when they were last read (usage.json, known-accounts.json, settings.json).
+    private var fileStamps: [FileStamp] = []
+    /// The minute of the last reload. The relative times in the window change once a minute, so a reload runs then too.
+    private var reloadedMinute = 0
+    /// Writes one account's `model_mix` entry to settings.json. The app uses the real writer; a test passes one that counts.
+    private let writeModelMix: (String, ModelMixSettings, URL) throws -> Void
+
+    /// The modification time and size of a file. A poll compares these before it reads anything.
+    private struct FileStamp: Equatable {
+        let modified: Date?
+        let size: Int?
+
+        init(_ url: URL) {
+            let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+            modified = attributes?[.modificationDate] as? Date
+            size = (attributes?[.size] as? NSNumber)?.intValue
+        }
+    }
 
     init(
         fileURL: URL = UsageLoader.defaultFileURL(),
         settingsURL: URL = AppSettingsStore.defaultFileURL(),
         knownAccountsURL: URL = KnownAccounts.defaultFileURL(),
-        uid: uid_t = getuid()
+        uid: uid_t = getuid(),
+        writeModelMix: @escaping (String, ModelMixSettings, URL) throws -> Void = { try AppSettingsStore.saveModelMix($1, accountID: $0, at: $2) }
     ) {
         self.fileURL = fileURL
         self.settingsURL = settingsURL
         self.knownAccountsURL = knownAccountsURL
         self.uid = uid
+        self.writeModelMix = writeModelMix
+        self.reloadedMinute = Self.minute(of: Date())
         self.result = UsageLoader.load(from: fileURL)
         self.languageChoice = AppSettingsStore.load(from: settingsURL)
         self.knownAccounts = KnownAccounts.load(from: knownAccountsURL)
         self.accountSettings = AppSettingsStore.loadAccountSettings(from: settingsURL)
         self.directMode = AppSettingsStore.loadDirectMode(from: settingsURL)
+        self.modelMixSettings = AppSettingsStore.loadModelMix(from: settingsURL)
         statusItem.set(percent: AppUsageInsights.overallPercent(result.document))
         writeNotifySetting()
+        // Taken after the notify write, so the app's own write does not look like a change at the first poll.
+        fileStamps = [fileURL, knownAccountsURL, settingsURL].map { FileStamp($0) }
         notifySwitch = UserDefaults.standard.observe(\.notifyAt80And95, options: [.new]) { [weak self] _, _ in
             Task { @MainActor in self?.writeNotifySetting() }
         }
@@ -66,7 +93,41 @@ final class UsageViewModel: ObservableObject {
     }
 
     var state: AppUsageState {
-        AppUsageState(result: result, now: now, isRefreshing: isRefreshing, notice: notice)
+        AppUsageState(
+            result: result,
+            now: now,
+            isRefreshing: isRefreshing,
+            notice: notice,
+            accountMixes: accountMixes
+        )
+    }
+
+    /// The mix of every account that has one, as the settings now make it.
+    private var accountMixes: [String: AccountModelMix] {
+        guard let document = result.document else { return [:] }
+        var mixes: [String: AccountModelMix] = [:]
+        for account in document.accounts where !account.id.isEmpty {
+            if let mix = mix(for: account, in: document) {
+                mixes[account.id] = mix
+            }
+        }
+        return mixes
+    }
+
+    private func mix(for account: UsageAccount, in document: UsageDocument) -> AccountModelMix? {
+        ModelMix.accountMix(
+            for: account,
+            prices: document.modelPrices ?? [:],
+            settings: modelMixSettings[account.id] ?? .standard
+        )
+    }
+
+    /// The mix of one account, or nil when it has none.
+    private func mix(for accountID: String) -> AccountModelMix? {
+        guard let document = result.document, let account = document.accounts.first(where: { $0.id == accountID }) else {
+            return nil
+        }
+        return mix(for: account, in: document)
     }
 
     /// Saves the choice and reloads the widget timelines so they redraw in the new language. The window, the popover
@@ -93,8 +154,18 @@ final class UsageViewModel: ObservableObject {
         }
     }
 
-    /// Reads usage.json, known-accounts.json and settings.json again. Publishes only when the content changed.
+    private static func minute(of date: Date) -> Int {
+        Int(date.timeIntervalSinceReferenceDate / 60)
+    }
+
+    /// Reads usage.json, known-accounts.json and settings.json again, but only when one of them changed or the minute
+    /// has turned. Publishes only when the content changed, so a poll that finds nothing new publishes nothing.
     func reload() {
+        let stamps = [fileURL, knownAccountsURL, settingsURL].map { FileStamp($0) }
+        let minute = Self.minute(of: Date())
+        guard stamps != fileStamps || minute != reloadedMinute else { return }
+        fileStamps = stamps
+        reloadedMinute = minute
         now = Date()
         let loaded = UsageLoader.load(from: fileURL)
         if loaded != result {
@@ -111,6 +182,10 @@ final class UsageViewModel: ObservableObject {
         let direct = AppSettingsStore.loadDirectMode(from: settingsURL)
         if direct != directMode {
             directMode = direct
+        }
+        let mix = AppSettingsStore.loadModelMix(from: settingsURL)
+        if mix != modelMixSettings {
+            modelMixSettings = mix
         }
         statusItem.set(percent: AppUsageInsights.overallPercent(loaded.document))
     }
@@ -246,6 +321,68 @@ final class UsageViewModel: ObservableObject {
         Task {
             let opened = await TerminalLauncher.open(command: command)
             accountNotice = opened ? .terminalOpened(provider: provider) : .terminalFailed
+        }
+    }
+
+    // MARK: Model mix
+
+    /// Moves one model's slider to `value` in one account's mix. The other sliders move in proportion, so the total stays
+    /// 100. The first change of a real mix starts a what-if from the real shares. Writes settings.json only; no collector run.
+    func setModelMixPercent(_ accountID: String, _ id: String, to value: Int) {
+        guard let mix = mix(for: accountID), let index = mix.shown.rows.firstIndex(where: { $0.id == id }) else { return }
+        let next = ModelMixMath.rescale(mix.shown.percents, index: index, to: value)
+        var settings = modelMixSettings[accountID] ?? .standard
+        settings.percent = Dictionary(uniqueKeysWithValues: zip(mix.shown.rows.map(\.id), next))
+        applyModelMix(accountID, settings)
+    }
+
+    /// Saves the shares of a finished slider drag: one write for the whole drag. Nothing is written when they are the same.
+    func commitModelMixPercent(_ accountID: String, _ percent: [String: Int]) {
+        var settings = modelMixSettings[accountID] ?? .standard
+        settings.percent = percent
+        guard settings != (modelMixSettings[accountID] ?? .standard) else { return }
+        applyModelMix(accountID, settings)
+    }
+
+    /// Drag and drop: the dragged model takes the place of the target in that account. The order is saved, the shares stay.
+    func moveModelMix(_ accountID: String, _ id: String, onto target: String) {
+        guard let mix = mix(for: accountID) else { return }
+        let ids = mix.shown.rows.map(\.id)
+        let moved = AccountList.moved(ids, id: id, onto: target)
+        guard moved != ids else { return }
+        var settings = modelMixSettings[accountID] ?? .standard
+        settings.order = moved
+        applyModelMix(accountID, settings)
+    }
+
+    /// Keyboard and VoiceOver alternative to dragging: moves a row one place up (-1) or down (+1).
+    func stepModelMix(_ accountID: String, _ id: String, by delta: Int) {
+        guard let mix = mix(for: accountID) else { return }
+        var ids = mix.shown.rows.map(\.id)
+        guard let from = ids.firstIndex(of: id) else { return }
+        let to = from + delta
+        guard ids.indices.contains(to) else { return }
+        ids.swapAt(from, to)
+        var settings = modelMixSettings[accountID] ?? .standard
+        settings.order = ids
+        applyModelMix(accountID, settings)
+    }
+
+    /// "Reset to actual": the real mix from the logs comes back for that account. The order is kept.
+    func resetModelMix(_ accountID: String) {
+        guard modelMixSettings[accountID]?.percent != nil else { return }
+        var settings = modelMixSettings[accountID] ?? .standard
+        settings.percent = nil
+        applyModelMix(accountID, settings)
+    }
+
+    /// Publishes the new settings of one account at once and writes settings.json. The collector is not run for a mix change.
+    private func applyModelMix(_ accountID: String, _ settings: ModelMixSettings) {
+        modelMixSettings[accountID] = settings
+        do {
+            try writeModelMix(accountID, settings, settingsURL)
+        } catch {
+            Self.logger.error("settings.json could not be written")
         }
     }
 

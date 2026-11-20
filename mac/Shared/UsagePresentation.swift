@@ -257,6 +257,13 @@ enum UsageFormat {
         guard value.isFinite else { return "—" }
         return String(format: "$%.2f", value)
     }
+
+    /// Money from a whole number of cents, for example 838 gives "$8.38". Used where the cents must add up exactly.
+    static func moneyText(cents: Int) -> String {
+        let sign = cents < 0 ? "-" : ""
+        let absolute = abs(cents)
+        return "\(sign)$\(absolute / 100).\(String(format: "%02d", absolute % 100))"
+    }
 }
 
 /// One limit row of a widget, or the single row of an account with no limits (`hasUsage` false).

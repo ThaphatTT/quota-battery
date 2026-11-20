@@ -120,6 +120,29 @@ enum L10nKey: CaseIterable {
     case directConsentCheckbox
     case directConsentCancel
     case directConsentTurnOn
+    case modelMixTitle
+    case modelMixMainModel
+    case modelMixTotal
+    case modelMixNote
+    case modelMixReset
+    case modelMixActual
+    case modelMixWhatIf
+    case modelMixMoveUp
+    case modelMixMoveDown
+    case cardTabLabel
+    case cardTabQuota
+    case cardTabModelMix
+    case trialTag
+    case settings
+    case tabGeneral
+    case tabAccounts
+    case tabNotifications
+    case tabDirectMode
+    case openAtLogin
+    case openAtLoginHint
+    case openAtLoginNeedsApproval
+    case openAtLoginFailed
+    case directModeIntro
 }
 
 enum L10n {
@@ -265,7 +288,94 @@ enum L10n {
             return pick("ยกเลิก", "Cancel", language)
         case .directConsentTurnOn:
             return pick("เปิดใช้งาน", "Turn on", language)
+        case .modelMixTitle:
+            return pick("ส่วนผสมโมเดล", "Model mix", language)
+        case .modelMixMainModel:
+            return pick("โมเดลหลัก", "Main model", language)
+        case .modelMixTotal:
+            return pick("ค่าใช้จ่ายเดือนนี้ (ประมาณ, เรท API)", "This month (estimate, API rates)", language)
+        case .modelMixNote:
+            return pick("แพลนสมัครสมาชิกไม่ได้เสียเงินตามจำนวนนี้", "Subscription plans do not pay these amounts.", language)
+        case .modelMixReset:
+            return pick("คืนค่าจริง", "Reset to actual", language)
+        case .modelMixActual:
+            return pick("ค่าจริง", "Actual", language)
+        case .modelMixWhatIf:
+            return pick("ปรับเอง", "What-if", language)
+        case .modelMixMoveUp:
+            return pick("เลื่อนขึ้น", "Move up", language)
+        case .modelMixMoveDown:
+            return pick("เลื่อนลง", "Move down", language)
+        case .cardTabLabel:
+            return pick("มุมมองของบัญชี", "Account view", language)
+        case .cardTabQuota:
+            return pick("โควตา", "Quota", language)
+        case .cardTabModelMix:
+            return pick("ส่วนผสมโมเดล", "Model mix", language)
+        case .trialTag:
+            return pick("ทดลอง", "Trial", language)
+        case .settings:
+            return pick("ตั้งค่า", "Settings", language)
+        case .tabGeneral:
+            return pick("ทั่วไป", "General", language)
+        case .tabAccounts:
+            return pick("บัญชี", "Accounts", language)
+        case .tabNotifications:
+            return pick("การแจ้งเตือน", "Notifications", language)
+        case .tabDirectMode:
+            return pick("โหมดตรง", "Direct mode", language)
+        case .openAtLogin:
+            return pick("เปิดเมื่อเข้าสู่ระบบ", "Open at login", language)
+        case .openAtLoginHint:
+            return pick("เปิด Quota Battery เองทุกครั้งที่คุณเข้าสู่ระบบ", "Start Quota Battery each time you log in", language)
+        case .openAtLoginNeedsApproval:
+            return pick("ต้องอนุญาตใน System Settings > Login Items ก่อน", "Allow it in System Settings > Login Items first", language)
+        case .openAtLoginFailed:
+            return pick("ตั้งค่านี้ไม่สำเร็จ ลองอีกครั้ง", "Could not change this setting. Try again.", language)
+        case .directModeIntro:
+            return pick(
+                "โหมดตรงอ่านการล็อกอินของ CLI บน Mac นี้ แล้วขอข้อมูลการใช้งานจากผู้ให้บริการโดยตรง",
+                "Direct mode reads the CLI login on this Mac and asks the provider for usage directly.",
+                language
+            )
         }
+    }
+
+    /// The popover's total line: "≈ $48.40 เดือนนี้ · Claude $31.26 · GPT $17.14" / "≈ $48.40 this month · Claude $31.26 · GPT $17.14".
+    /// Each part is already a label and an amount; a trial part carries its marker in the text it is given.
+    static func popoverTotal(total: String, parts: [String], _ language: UILanguage) -> String {
+        let head = pick("≈ \(total) เดือนนี้", "≈ \(total) this month", language)
+        return ([head] + parts).joined(separator: " · ")
+    }
+
+    /// The marker after a trial part's amount in the popover: "Claude $31.26 (ทดลอง)" / "Claude $31.26 (trial)".
+    static func trialMarker(_ part: String, _ language: UILanguage) -> String {
+        "\(part) \(pick("(ทดลอง)", "(trial)", language))"
+    }
+
+    /// The real cost under a trial tile: "จริง ~$12.40" / "Actual ~$12.40".
+    static func actualValue(_ cost: String, _ language: UILanguage) -> String {
+        pick("จริง \(cost)", "Actual \(cost)", language)
+    }
+
+    /// The label of a tile's colour bar for VoiceOver: "สัดส่วนตามโมเดล: Opus 5.5 45%, ..." / "Share by model: Opus 5.5 45%, ...".
+    static func shareByModel(_ parts: [String], _ language: UILanguage) -> String {
+        pick("สัดส่วนตามโมเดล: ", "Share by model: ", language) + parts.joined(separator: ", ")
+    }
+
+    /// The slider's name for VoiceOver: "สัดส่วน Opus 5.5" / "Share of Opus 5.5".
+    static func modelMixShare(_ model: String, _ language: UILanguage) -> String {
+        pick("สัดส่วน \(model)", "Share of \(model)", language)
+    }
+
+    /// The slider's value for VoiceOver: "40 เปอร์เซ็นต์" / "40 percent".
+    static func modelMixPercent(_ value: Int, _ language: UILanguage) -> String {
+        pick("\(value) เปอร์เซ็นต์", "\(value) percent", language)
+    }
+
+    /// The prices under a model's name: "เข้า $4.00 · ออก $20.00 ต่อ 1M" / "in $4.00 · out $20.00 per 1M".
+    static func modelMixPrices(input: String, output: String, _ language: UILanguage) -> String {
+        pick("เข้า \(input) · ออก \(output) ต่อ 1M", "in \(input) · out \(output) per 1M", language)
     }
 
     /// "อัปเดต 2 นาทีก่อน" / "Updated 2 min ago".

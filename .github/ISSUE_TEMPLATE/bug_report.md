@@ -19,7 +19,7 @@ assignees: ""
 **Environment**
 
 - macOS version (for example 15.4):
-- AI Usage app version: the `MARKETING_VERSION` in `mac/project.yml`, or the commit you built (`git rev-parse --short HEAD`):
+- Quota Battery app version: the `MARKETING_VERSION` in `mac/project.yml`, or the commit you built (`git rev-parse --short HEAD`):
 - Part affected: Mac app / Mac widget / iPhone widget (Scriptable) / collector
 
 **usage.json (redacted)**

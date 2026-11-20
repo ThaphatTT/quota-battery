@@ -605,7 +605,7 @@ class LocalLogTests(Base):
         self.write_claude("g.jsonl", [claude_line("m11", "r11", "claude-opus-5-5",
                                                   "2026-11-19T03:00:00.000Z", 100, 0, cr=1_000_000)])
         usage = m.claude_local_usage(make_env(self.home))
-        self.assertEqual(usage["today"], {"tokens": 100, "cost_usd": 0.2})
+        self.assertEqual((usage["today"]["tokens"], usage["today"]["cost_usd"]), (100, 0.2))
 
     def test_claude_cost_uses_family_prices_and_haiku_tiers(self):
         self.assertAlmostEqual(m.cost_usd("claude-opus-5-5", 1_000_000, 0, 0, 0, 0), 4.0)
@@ -619,7 +619,7 @@ class LocalLogTests(Base):
         self.write_claude("d.jsonl", [claude_line("m9", "r9", "claude-mystery-1",
                                                   "2026-11-19T03:00:00.000Z", 10, 10)])
         usage = m.claude_local_usage(make_env(self.home))
-        self.assertEqual(usage["today"], {"tokens": 20, "cost_usd": None})
+        self.assertEqual((usage["today"]["tokens"], usage["today"]["cost_usd"]), (20, None))
 
     def test_partial_last_line_is_skipped_and_old_month_is_not_in_month(self):
         self.write_claude("e.jsonl", [
@@ -628,6 +628,110 @@ class LocalLogTests(Base):
         usage = m.claude_local_usage(make_env(self.home))
         self.assertEqual(usage["today"]["tokens"], 0)
         self.assertEqual(usage["month"]["tokens"], 0)
+
+    def test_family_split_by_model_prefix_and_kind_for_today_and_month(self):
+        # Berlin day: NOW is Nov 19. opus 4-8 and opus 5-5 both land in "opus"; the unknown id lands in "other".
+        self.write_claude("fam.jsonl", [
+            claude_line("f1", "fr1", "claude-opus-5-5", "2026-11-19T03:00:00.000Z", 100, 10, cw=20, cr=1000,
+                        cw1h=5),
+            claude_line("f2", "fr2", "claude-opus-4-8", "2026-11-19T03:10:00.000Z", 50, 5),
+            claude_line("f3", "fr3", "claude-sonnet-5-5", "2026-11-19T03:20:00.000Z", 200, 0),
+            claude_line("f4", "fr4", "claude-haiku-5-5", "2026-11-19T03:30:00.000Z", 7, 0),
+            claude_line("f5", "fr5", "claude-fable-5-2", "2026-11-19T03:40:00.000Z", 0, 3),
+            claude_line("f6", "fr6", "claude-mystery-1", "2026-11-19T03:50:00.000Z", 11, 1)])
+        usage = m.claude_local_usage(make_env(self.home))
+        zero = {"input": 0, "output": 0, "cache_write_5m": 0, "cache_write_1h": 0, "cache_read": 0}
+        month = usage["month"]["by_family"]
+        self.assertEqual(set(month), {"opus", "sonnet", "haiku", "fable", "other"})
+        self.assertEqual(month["opus"], {"input": 150, "output": 15, "cache_write_5m": 15,
+                                         "cache_write_1h": 5, "cache_read": 1000})
+        self.assertEqual(month["sonnet"], dict(zero, input=200))
+        self.assertEqual(month["haiku"], dict(zero, input=7))
+        self.assertEqual(month["fable"], dict(zero, output=3))
+        self.assertEqual(month["other"], dict(zero, input=11, output=1))
+        self.assertEqual(usage["today"]["by_family"], usage["month"]["by_family"])
+        # tokens leave out cache reads: 130 + 55 + 200 + 7 + 3 + 12 = 407; the unknown model has no cost
+        self.assertEqual((usage["month"]["tokens"], usage["month"]["cost_usd"]), (407, None))
+
+    def test_tokens_and_cost_are_unchanged_by_the_family_split(self):
+        self.write_claude("cost.jsonl", [
+            claude_line("c1", "cr1", "claude-opus-5-5", "2026-11-19T03:00:00.000Z", 1_000_000, 0),
+            claude_line("c2", "cr2", "claude-opus-4-8", "2026-11-19T03:10:00.000Z", 0, 100_000),
+            claude_line("c3", "cr3", "claude-sonnet-5-5", "2026-11-19T03:20:00.000Z", 0, 0, cw=1_000_000),
+            claude_line("c4", "cr4", "claude-fable-5-2", "2026-11-19T03:40:00.000Z", 0, 1_000)])
+        usage = m.claude_local_usage(make_env(self.home))
+        # Opus 5.5 input 4.00 + Opus 4.8 output 2.50 + Sonnet 5.5 cache write 5m 2.50 + Fable 5.2 output 0.04
+        self.assertEqual((usage["month"]["tokens"], usage["month"]["cost_usd"]), (2_101_000, 9.04))
+        self.assertEqual((usage["today"]["tokens"], usage["today"]["cost_usd"]), (2_101_000, 9.04))
+        self.assertEqual(usage["month"]["by_family"]["opus"]["input"], 1_000_000)
+        self.assertEqual(usage["month"]["by_family"]["opus"]["output"], 100_000)
+        self.assertEqual(usage["month"]["by_family"]["sonnet"]["cache_write_5m"], 1_000_000)
+
+    def test_family_totals_follow_the_today_and_month_boundaries(self):
+        self.write_claude("bound.jsonl", [
+            # Berlin Nov 19 (today, so also this month)
+            claude_line("b1", "br1", "claude-opus-5-5", "2026-11-19T03:00:00.000Z", 1000, 0),
+            # Berlin Nov 18 23:30: this month, not today
+            claude_line("b2", "br2", "claude-sonnet-5-5", "2026-11-18T22:30:00.000Z", 2000, 0),
+            # Berlin Nov 1 00:30: this month, not today
+            claude_line("b3", "br3", "claude-haiku-5-5", "2026-10-31T23:30:00.000Z", 4000, 0),
+            # Berlin Oct 31 23:30: last month, in neither bucket
+            claude_line("b4", "br4", "claude-fable-5-2", "2026-10-31T22:30:00.000Z", 8000, 0)])
+        usage = m.claude_local_usage(make_env(self.home))
+        self.assertEqual(usage["today"]["by_family"]["opus"]["input"], 1000)
+        self.assertEqual(usage["today"]["by_family"]["sonnet"]["input"], 0)
+        self.assertEqual(usage["today"]["tokens"], 1000)
+        self.assertEqual(usage["month"]["by_family"]["opus"]["input"], 1000)
+        self.assertEqual(usage["month"]["by_family"]["sonnet"]["input"], 2000)
+        self.assertEqual(usage["month"]["by_family"]["haiku"]["input"], 4000)
+        self.assertEqual(usage["month"]["by_family"]["fable"]["input"], 0)
+        self.assertEqual(usage["month"]["tokens"], 7000)
+
+    def test_a_cache_write_split_into_5m_and_1h_is_kept_per_kind(self):
+        self.write_claude("cw.jsonl", [claude_line("w1", "wr1", "claude-opus-5-5",
+                                                   "2026-11-19T03:00:00.000Z", 0, 0, cw=300, cw1h=120)])
+        usage = m.claude_local_usage(make_env(self.home))
+        self.assertEqual(usage["today"]["by_family"]["opus"]["cache_write_5m"], 180)
+        self.assertEqual(usage["today"]["by_family"]["opus"]["cache_write_1h"], 120)
+        self.assertEqual(usage["today"]["tokens"], 300)
+
+    def test_no_claude_logs_keep_the_family_keys_at_zero(self):
+        self.write_claude("none.jsonl", [claude_line("n1", "nr1", "claude-sonnet-5-5",
+                                                     "2026-10-15T03:00:00.000Z", 5, 5)])
+        usage = m.claude_local_usage(make_env(self.home))
+        self.assertEqual(usage["today"]["by_family"]["opus"]["input"], 0)
+        self.assertEqual(set(usage["today"]["by_family"]), {"opus", "sonnet", "haiku", "fable", "other"})
+
+    def test_model_prices_are_the_four_latest_models_from_the_price_table(self):
+        prices = m.model_prices()
+        self.assertEqual(list(prices), ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5",
+                                        "claude-fable-5-2", "gpt-6-luna", "gpt-6.2-sol", "gpt-6.1-sol"])
+        self.assertEqual(prices["claude-opus-5-5"], {"provider": "anthropic", "family": "opus", "label": "Opus 5.5", "input": 4.0,
+                                                    "cache_write_5m": 5.0, "cache_write_1h": 8.0,
+                                                    "cache_read": 0.2, "output": 20.0})
+        self.assertEqual(prices["claude-sonnet-5-5"], {"provider": "anthropic", "family": "sonnet", "label": "Sonnet 5.5", "input": 2.0,
+                                                      "cache_write_5m": 2.5, "cache_write_1h": 4.0,
+                                                      "cache_read": 0.1, "output": 10.0})
+        # Haiku 5.5 is the base tier (prompts up to 100k tokens)
+        self.assertEqual(prices["claude-haiku-5-5"], {"provider": "anthropic", "family": "haiku", "label": "Haiku 5.5", "input": 0.1,
+                                                     "cache_write_5m": 0.125, "cache_write_1h": 0.2,
+                                                     "cache_read": 0.01, "output": 0.5})
+        self.assertEqual(prices["claude-fable-5-2"], {"provider": "anthropic", "family": "fable", "label": "Fable 5.2", "input": 8.0,
+                                                     "cache_write_5m": 10.0, "cache_write_1h": 16.0,
+                                                     "cache_read": 0.2, "output": 40.0})
+        # the numbers are the ones cost_usd charges, so PRICE_TABLE stays the only source
+        for model, price in prices.items():
+            if price["provider"] != "anthropic":
+                continue
+            # 100k prompt tokens: the base tier, so the cost of 100k input is a tenth of the per-million price
+            self.assertAlmostEqual(m.cost_usd(model, 100_000, 0, 0, 0, 0), price["input"] / 10)
+            self.assertAlmostEqual(m.cost_usd(model, 0, 1_000_000, 0, 0, 0), price["output"])
+
+    def test_usage_document_carries_model_prices_for_both_copies(self):
+        doc = m.build_document(NOW, [])
+        self.assertEqual(doc["schema"], 1)
+        self.assertEqual(doc["model_prices"], m.model_prices())
+        self.assertIn("model_prices", json.loads(m.serialize(doc)))
 
     def test_unchanged_files_are_not_parsed_again(self):
         path = self.write_claude("f.jsonl", [claude_line("m7", "r7", "claude-sonnet-5-5",
@@ -662,8 +766,11 @@ class LocalLogTests(Base):
             codex_line("2026-11-19T03:00:00.000Z", 1000)
             + codex_line("2026-11-19T03:05:00.000Z", 500) + "not json\n", encoding="utf-8")
         usage = m.codex_local_usage(make_env(self.home))
-        self.assertEqual(usage["today"], {"tokens": 1500, "cost_usd": None})
-        self.assertEqual(usage["month"], {"tokens": 1500, "cost_usd": None})
+        # no turn_context line, so the model is "unknown": tokens are counted and the cost is null
+        self.assertEqual((usage["today"]["tokens"], usage["today"]["cost_usd"]), (1500, None))
+        self.assertEqual((usage["month"]["tokens"], usage["month"]["cost_usd"]), (1500, None))
+        self.assertEqual(usage["today"]["by_model"]["unknown"]["input"], 1480)
+        self.assertEqual(usage["today"]["by_model"]["unknown"]["output"], 20)
 
     def test_codex_usage_is_null_without_session_logs(self):
         self.assertIsNone(m.codex_local_usage(make_env(self.home)))
@@ -1129,7 +1236,7 @@ class LocalUsageOnApiErrorTests(Base):
         self.use_clis({"codex": single_program("hang")})
         acc = self.collect_real(make_env(self.home), "codex")
         self.assertEqual(acc["status"], "error")
-        self.assertEqual(acc["usage"]["today"], {"tokens": 1000, "cost_usd": None})
+        self.assertEqual((acc["usage"]["today"]["tokens"], acc["usage"]["today"]["cost_usd"]), (1000, None))
 
     def test_agy_has_no_local_logs_so_its_usage_stays_null(self):
         keychain = FakeKeychain({m.AGY_KEYCHAIN_SERVICE: agy_pw()})
@@ -1137,6 +1244,265 @@ class LocalUsageOnApiErrorTests(Base):
         acc = self.collect_real(make_env(self.home, keychain), "agy")
         self.assertEqual(acc["status"], "error")
         self.assertIsNone(acc["usage"])
+
+
+def gpt_turn(stamp, inp, cached=0, cache_write=0, output=0, reasoning=None, flag=None, total=None):
+    """One token_count event with its per-turn last_token_usage. reasoning and flag are left out when None."""
+    last = {"input_tokens": inp, "cached_input_tokens": cached, "cache_write_input_tokens": cache_write,
+            "output_tokens": output, "total_tokens": inp + output if total is None else total}
+    if reasoning is not None:
+        last["reasoning_output_tokens"] = reasoning
+    info = {"last_token_usage": last, "total_token_usage": {"total_tokens": 999_999_999}}
+    if flag is not None:
+        info["last_usage_includes_reasoning"] = flag
+    payload = {"type": "token_count", "info": info}
+    return json.dumps({"timestamp": stamp, "type": "event_msg", "payload": payload}) + "\n"
+
+
+def gpt_context(stamp, model):
+    return json.dumps({"timestamp": stamp, "type": "turn_context", "payload": {"model": model}}) + "\n"
+
+
+class GptUsageTests(Base):
+    """GPT (Codex) per-model counts, per-turn costs, and the GPT rows of the price table."""
+
+    def write_codex(self, name, lines, folder="2026/11/19"):
+        day = self.home / ".codex" / "sessions" / folder
+        day.mkdir(parents=True, exist_ok=True)
+        path = day / name
+        path.write_text("".join(lines), encoding="utf-8")
+        return path
+
+    def test_three_models_are_counted_by_kind_for_today_and_month(self):
+        self.write_codex("gpt-a.jsonl", [
+            gpt_context("2026-11-18T10:00:00.000Z", "gpt-6-luna"),
+            gpt_turn("2026-11-18T10:00:01.000Z", 100, output=10),
+            gpt_context("2026-11-19T03:00:00.000Z", "gpt-6-luna"),
+            gpt_turn("2026-11-19T03:00:01.000Z", 1000, cached=400, output=100, reasoning=40, flag=True),
+            gpt_context("2026-11-19T03:05:00.000Z", "gpt-6.2-sol"),
+            gpt_turn("2026-11-19T03:05:01.000Z", 2000, cached=1000, output=300),
+            gpt_context("2026-11-19T03:10:00.000Z", "gpt-6.1-sol"),
+            gpt_turn("2026-11-19T03:10:01.000Z", 500, output=50, reasoning=10, flag=False),
+        ])
+        usage = m.codex_local_usage(make_env(self.home))
+        today = usage["today"]["by_model"]
+        self.assertEqual(today["gpt-6-luna"], {"input": 600, "cached_input": 400, "cache_write": 0,
+                                               "output": 100, "reasoning": 40})
+        self.assertEqual(today["gpt-6.2-sol"], {"input": 1000, "cached_input": 1000, "cache_write": 0,
+                                                "output": 300, "reasoning": 0})
+        self.assertEqual(today["gpt-6.1-sol"], {"input": 500, "cached_input": 0, "cache_write": 0,
+                                                "output": 50, "reasoning": 10})
+        self.assertEqual(usage["today"]["tokens"], 1100 + 2300 + 550)  # input + output of each turn
+        self.assertEqual(usage["month"]["tokens"], 1100 + 2300 + 550 + 110)
+        self.assertEqual(usage["month"]["by_model"]["gpt-6-luna"]["input"], 700)
+        self.assertEqual(usage["month"]["by_model"]["gpt-6-luna"]["output"], 110)
+        self.assertEqual(set(today), {"gpt-6-luna", "gpt-6.2-sol", "gpt-6.1-sol"})
+
+    def test_cached_input_is_split_out_of_input_and_cache_write_is_its_own_kind(self):
+        self.write_codex("gpt-b.jsonl", [
+            gpt_context("2026-11-19T03:00:00.000Z", "gpt-6.2-sol"),
+            gpt_turn("2026-11-19T03:00:01.000Z", 1000, cached=250, cache_write=70, output=5),
+        ])
+        row = m.codex_local_usage(make_env(self.home))["today"]["by_model"]["gpt-6.2-sol"]
+        self.assertEqual((row["input"], row["cached_input"], row["cache_write"]), (750, 250, 70))
+
+    def reasoning_cost(self, flag):
+        self.write_codex("gpt-r.jsonl", [
+            gpt_context("2026-11-19T03:00:00.000Z", "gpt-6-luna"),
+            gpt_turn("2026-11-19T03:00:01.000Z", 0, output=1_000_000, reasoning=500_000, flag=flag),
+        ])
+        return m.codex_local_usage(make_env(self.home))["today"]
+
+    def test_reasoning_is_not_added_when_the_log_flag_is_true(self):
+        today = self.reasoning_cost(True)
+        self.assertEqual(today["cost_usd"], 0.5)  # 1M output at 0.50 per million, reasoning already inside
+        self.assertEqual(today["by_model"]["gpt-6-luna"]["reasoning"], 500_000)
+
+    def test_reasoning_is_not_added_when_the_log_has_no_flag(self):
+        today = self.reasoning_cost(None)
+        self.assertEqual(today["cost_usd"], 0.5)  # output_tokens includes reasoning by default
+        self.assertEqual(today["by_model"]["gpt-6-luna"]["reasoning"], 500_000)
+
+    def test_reasoning_is_added_as_output_when_the_flag_says_output_leaves_it_out(self):
+        today = self.reasoning_cost(False)
+        self.assertEqual(today["cost_usd"], 0.75)  # (1M + 0.5M) output at 0.50 per million
+        self.assertEqual(today["by_model"]["gpt-6-luna"]["reasoning"], 500_000)
+        self.assertEqual(today["by_model"]["gpt-6-luna"]["output"], 1_000_000)
+
+    def test_long_context_turn_uses_long_rates_for_the_whole_turn(self):
+        cases = [
+            # (input, cached, cache write, output, expected USD)
+            (272_000, 100_000, 0, 1000,  # short: 172k plain at 2.00, 100k cached at 0.10, 1k output at 10
+             (172_000 * 2.0 + 100_000 * 0.1 + 1000 * 10.0) / 1e6),
+            (272_001, 100_000, 0, 1000,  # long: 172001 plain at 4.00, 100k cached at 0.20, 1k output at 15
+             (172_001 * 4.0 + 100_000 * 0.2 + 1000 * 15.0) / 1e6),
+            (300_000, 100_000, 1_000_000, 1000,  # long, cache write at the short rate (2.50)
+             (200_000 * 4.0 + 100_000 * 0.2 + 1_000_000 * 2.5 + 1000 * 15.0) / 1e6),
+        ]
+        for inp, cached, cw, out, expected in cases:
+            with self.subTest(input=inp, cache_write=cw):
+                self.assertAlmostEqual(m.gpt_cost_usd("gpt-6.2-sol", inp, cached, cw, out, 0), expected)
+
+    def test_long_context_threshold_and_luna_long_rates(self):
+        self.assertEqual(m.GPT_LONG_CONTEXT, 272_000)
+        # luna short: 100k plain at 0.10 and 1M output at 0.50
+        self.assertAlmostEqual(m.gpt_cost_usd("gpt-6-luna", 100_000, 0, 0, 1_000_000, 0), 0.51)
+        # luna long (input above 272k): 300k plain at 0.20 and 1M output at 0.75
+        self.assertAlmostEqual(m.gpt_cost_usd("gpt-6-luna", 300_000, 0, 0, 1_000_000, 0),
+                               (300_000 * 0.20 + 1_000_000 * 0.75) / 1e6)
+
+    def test_long_context_split_keeps_totals_and_the_mac_formula_gives_the_same_cost(self):
+        self.write_codex("gpt-long.jsonl", [
+            gpt_context("2026-11-19T03:00:00.000Z", "gpt-6-luna"),
+            gpt_turn("2026-11-19T03:00:01.000Z", 100_000, cached=20_000, output=1000, reasoning=300),   # short
+            gpt_turn("2026-11-19T03:00:02.000Z", 300_000, cached=50_000, output=5000, reasoning=1000),  # long
+            gpt_turn("2026-11-19T03:00:03.000Z", 1000, output=100),                                       # short
+            gpt_context("2026-11-19T03:05:00.000Z", "gpt-6.2-sol"),
+            gpt_turn("2026-11-19T03:05:01.000Z", 272_000, output=100),  # exactly 272,000: still short
+            gpt_turn("2026-11-19T03:05:02.000Z", 280_000, cache_write=10_000, output=2000, reasoning=500),  # long
+            gpt_context("2026-11-19T03:10:00.000Z", "gpt-6.1-sol"),
+            gpt_turn("2026-11-19T03:10:01.000Z", 500, output=50),  # short only: no long_context key
+        ])
+        usage = m.codex_local_usage(make_env(self.home))
+        today = usage["today"]
+        by = today["by_model"]
+        # Totals are the short and long turns together, the same numbers as before the split.
+        self.assertEqual(by["gpt-6-luna"], {
+            "input": 331_000, "cached_input": 70_000, "cache_write": 0, "output": 6100, "reasoning": 1300,
+            "long_context": {"input": 250_000, "cached_input": 50_000, "cache_write": 0, "output": 5000,
+                             "reasoning": 1000}})
+        self.assertEqual(by["gpt-6.2-sol"], {
+            "input": 552_000, "cached_input": 0, "cache_write": 10_000, "output": 2100, "reasoning": 500,
+            "long_context": {"input": 280_000, "cached_input": 0, "cache_write": 10_000, "output": 2000,
+                             "reasoning": 500}})
+        self.assertEqual(by["gpt-6.1-sol"], {"input": 500, "cached_input": 0, "cache_write": 0, "output": 50,
+                                             "reasoning": 0})
+        self.assertEqual(today["tokens"], 101_000 + 305_000 + 1100 + 272_100 + 282_000 + 550)
+        self.assertEqual(usage["month"]["by_model"]["gpt-6.2-sol"]["long_context"]["input"], 280_000)
+
+        def mac_cost(by_model):
+            """The Mac formula from by_model only: the short part at base rates, the long_context part at the
+            long-context rates. The long cache write uses the short rate, since the long table has none."""
+            total = 0.0
+            for model, entry in by_model.items():
+                _, _, _, _, (p_in, p_cached, p_cw, p_out), (l_in, l_cached, l_out) = m.gpt_price_row(model)
+                long = entry.get("long_context", {})
+                short = {kind: entry[kind] - long.get(kind, 0) for kind in m.CODEX_KINDS}
+                total += (short["input"] * p_in + short["cached_input"] * p_cached
+                          + short["cache_write"] * p_cw + short["output"] * p_out
+                          + long.get("input", 0) * l_in + long.get("cached_input", 0) * l_cached
+                          + long.get("cache_write", 0) * p_cw + long.get("output", 0) * l_out) / 1_000_000
+            return total
+
+        # luna 0.0636 + sol 6.2 1.72 + sol 6.1 0.0015
+        self.assertAlmostEqual(mac_cost(by), 1.7851)
+        self.assertEqual(today["cost_usd"], round(mac_cost(by), 2))
+        self.assertEqual(today["cost_usd"], 1.79)
+
+    def test_turn_costs_add_up_per_day_and_month(self):
+        self.write_codex("gpt-c.jsonl", [
+            gpt_context("2026-11-19T03:00:00.000Z", "gpt-6-luna"),
+            gpt_turn("2026-11-19T03:00:01.000Z", 100_000, output=1_000_000),
+            gpt_context("2026-11-18T03:00:00.000Z", "gpt-6.2-sol"),
+            gpt_turn("2026-11-18T03:00:01.000Z", 1_000_000, output=0),
+        ])
+        usage = m.codex_local_usage(make_env(self.home))
+        self.assertEqual(usage["today"]["cost_usd"], 0.51)
+        # the Nov 18 turn has 1M input, above 272k, so it is priced at the long-context rate (4.00 per million)
+        self.assertEqual(usage["month"]["cost_usd"], 4.51)
+
+    def test_duplicate_event_in_one_file_or_in_a_resumed_copy_counts_once(self):
+        turn = gpt_turn("2026-11-19T03:00:01.000Z", 100_000, output=1_000_000)
+        self.write_codex("gpt-d1.jsonl", [gpt_context("2026-11-19T03:00:00.000Z", "gpt-6-luna"), turn, turn])
+        self.write_codex("gpt-d2.jsonl", [gpt_context("2026-11-19T03:00:00.000Z", "gpt-6-luna"), turn])
+        usage = m.codex_local_usage(make_env(self.home))
+        self.assertEqual(usage["today"]["tokens"], 1_100_000)
+        self.assertEqual(usage["today"]["cost_usd"], 0.51)
+        self.assertEqual(usage["today"]["by_model"]["gpt-6-luna"]["output"], 1_000_000)
+
+    def test_two_turns_with_the_same_numbers_at_different_times_both_count(self):
+        self.write_codex("gpt-e.jsonl", [
+            gpt_context("2026-11-19T03:00:00.000Z", "gpt-6-luna"),
+            gpt_turn("2026-11-19T03:00:01.000Z", 100_000, output=1_000_000),
+            gpt_turn("2026-11-19T03:00:02.000Z", 100_000, output=1_000_000),
+        ])
+        usage = m.codex_local_usage(make_env(self.home))
+        self.assertEqual(usage["today"]["tokens"], 2_200_000)
+
+    def test_unknown_model_counts_tokens_and_makes_the_cost_null(self):
+        self.write_codex("gpt-f.jsonl", [
+            gpt_context("2026-11-19T03:00:00.000Z", "gpt-7-mystery"),
+            gpt_turn("2026-11-19T03:00:01.000Z", 1000, output=100),
+            gpt_context("2026-11-19T03:01:00.000Z", "gpt-6-luna"),
+            gpt_turn("2026-11-19T03:01:01.000Z", 1000, output=100),
+        ])
+        usage = m.codex_local_usage(make_env(self.home))
+        self.assertEqual(usage["today"]["tokens"], 2200)
+        self.assertIsNone(usage["today"]["cost_usd"])
+        self.assertEqual(usage["today"]["by_model"]["gpt-7-mystery"]["input"], 1000)
+        self.assertEqual(usage["today"]["by_model"]["gpt-6-luna"]["output"], 100)
+
+    def test_turn_without_any_model_is_unknown_and_has_no_cost(self):
+        self.write_codex("gpt-g.jsonl", [gpt_turn("2026-11-19T03:00:01.000Z", 1000, output=100)])
+        usage = m.codex_local_usage(make_env(self.home))
+        self.assertEqual(usage["today"]["by_model"]["unknown"]["input"], 1000)
+        self.assertIsNone(usage["today"]["cost_usd"])
+
+    def test_model_ids_are_matched_by_prefix_and_otherwise_kept_as_logged(self):
+        self.assertEqual(m.gpt_model_id("gpt-6.2-sol-2026-11-01"), "gpt-6.2-sol")
+        self.assertEqual(m.gpt_model_id("GPT-6-Luna"), "gpt-6-luna")
+        self.assertEqual(m.gpt_model_id("gpt-6-sol"), "gpt-6-sol")  # not in the price table: no prefix match
+        self.assertIsNone(m.gpt_cost_usd("gpt-6-sol", 1, 0, 0, 1, 0))
+        self.assertEqual(m.gpt_model_id(None), "unknown")
+        self.assertEqual(m.gpt_model_id("   "), "unknown")
+        self.assertEqual(len(m.gpt_model_id("x" * 200)), 64)
+
+    def test_day_and_month_boundaries_use_the_injected_zone(self):
+        # Zone in the test: Europe/Berlin (UTC+1 on these dates). NOW is Nov 19 05:30 Berlin.
+        self.write_codex("gpt-h.jsonl", [
+            gpt_context("2026-10-31T22:30:00.000Z", "gpt-6-luna"),
+            gpt_turn("2026-10-31T22:30:01.000Z", 1, output=1),   # Oct 31 23:30 Berlin: October, tokens 2
+            gpt_turn("2026-10-31T23:30:01.000Z", 2, output=2),   # Nov 1 00:30 Berlin: November, tokens 4
+            gpt_turn("2026-11-18T22:30:01.000Z", 4, output=4),   # Nov 18 23:30 Berlin: yesterday, tokens 8
+            gpt_turn("2026-11-19T03:00:01.000Z", 8, output=8),   # Nov 19 04:00 Berlin: today, tokens 16
+        ])
+        usage = m.codex_local_usage(make_env(self.home))
+        self.assertEqual(usage["today"]["tokens"], 16)
+        self.assertEqual(usage["month"]["tokens"], 4 + 8 + 16)
+        with mock.patch.object(m, "DAY_ZONE", ZoneInfo("America/New_York")):
+            usage = m.codex_local_usage(make_env(self.home, cache={}))
+        # In New York NOW is Nov 18 23:30, so the two Nov 18 turns are "today" and the October and
+        # Nov 1 turns (Oct 31 in New York) are not in the month.
+        self.assertEqual(usage["today"]["tokens"], 8 + 16)
+        self.assertEqual(usage["month"]["tokens"], 8 + 16)
+
+    def test_a_cached_file_is_not_parsed_again_and_a_changed_file_is_parsed_once_more(self):
+        path = self.write_codex("gpt-k.jsonl", [gpt_context("2026-11-19T03:00:00.000Z", "gpt-6-luna"),
+                                                gpt_turn("2026-11-19T03:00:01.000Z", 10, output=10)])
+        cache = {}
+        with mock.patch.object(m, "parse_codex_file", wraps=m.parse_codex_file) as parse:
+            first = m.codex_local_usage(make_env(self.home, cache=cache))
+            second = m.codex_local_usage(make_env(self.home, cache=cache))
+            self.assertEqual(parse.call_count, 1)
+            self.assertEqual(first, second)
+            path.write_text(path.read_text(encoding="utf-8") + gpt_turn(
+                "2026-11-19T03:02:00.000Z", 5, output=5), encoding="utf-8")
+            third = m.codex_local_usage(make_env(self.home, cache=cache))
+            self.assertEqual(parse.call_count, 2)
+        self.assertEqual(third["today"]["tokens"], 30)
+
+    def test_model_prices_list_the_gpt_rows_with_provider_and_long_context(self):
+        prices = m.model_prices()
+        self.assertEqual(prices["gpt-6-luna"], {
+            "provider": "openai", "family": "luna", "label": "GPT-6 Luna", "input": 0.1, "cached_input": 0.01,
+            "cache_write": 0.125, "output": 0.5,
+            "long_context": {"threshold": 272000, "input": 0.2, "cached_input": 0.02, "output": 0.75}})
+        self.assertEqual(prices["gpt-6.2-sol"]["long_context"],
+                         {"threshold": 272000, "input": 4.0, "cached_input": 0.2, "output": 15.0})
+        self.assertEqual(prices["gpt-6.1-sol"]["label"], "GPT-6.1 Sol")
+        self.assertEqual(prices["gpt-6.1-sol"]["provider"], "openai")
+        for model in ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-2"):
+            self.assertEqual(prices[model]["provider"], "anthropic")
 
 
 if __name__ == "__main__":

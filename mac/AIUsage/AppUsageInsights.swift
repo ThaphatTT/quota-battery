@@ -7,9 +7,32 @@ struct AppUsageState: Equatable {
     var isRefreshing: Bool
     /// What the app says about its last refresh once it has finished. Drawn in the chosen language.
     var notice: RefreshNotice?
+    /// The Model mix of each account that has one, by account id. An account without one has no Model mix tab.
+    var accountMixes: [String: AccountModelMix] = [:]
 
     var document: UsageDocument? { result.document }
     var accounts: [UsageAccount] { result.document?.accounts ?? [] }
+
+    /// The popover's total line over the shown accounts that have a mix. Nil when none has one.
+    var popoverTotal: PopoverTotal? {
+        AppUsageInsights.popoverTotal(accounts: accounts, mixes: accountMixes)
+    }
+}
+
+/// The popover's money line: this month's estimated cost over every shown account with a mix, split by provider. The
+/// parts are whole cents, so they always add up to the total. A part is a trial when one of its accounts is a trial.
+struct PopoverTotal: Equatable {
+    struct Part: Equatable {
+        /// `claude` or `codex`.
+        let provider: String
+        let cents: Int
+        let isTrial: Bool
+    }
+
+    /// Claude first, then GPT, each only when it has an account with a mix.
+    let parts: [Part]
+
+    var totalCents: Int { parts.reduce(0) { $0 + $1.cents } }
 }
 
 /// Rules for the menu bar, the popover and the app window. No SwiftUI here. Every time comes in as `now`, and every
@@ -23,7 +46,19 @@ enum AppUsageInsights {
     struct UsageTile: Equatable {
         let title: String
         let tokensText: String
+        /// The real cost, as the Quota tab shows it: "~$12.40". Nil when the file has none.
         let costText: String?
+        /// The shares of the period by model, for the colour bar under the tile. Empty when there is no mix.
+        var bar: [TileBarSegment] = []
+        /// The what-if cost, shown big in the Model mix tab while the mix is a trial. Nil otherwise.
+        var trialCostText: String? = nil
+    }
+
+    /// One model's part of a tile's colour bar.
+    struct TileBarSegment: Equatable {
+        let family: String
+        let label: String
+        let percent: Int
     }
 
     struct StatusLine: Equatable {
@@ -163,19 +198,76 @@ enum AppUsageInsights {
         account.limits.count > 2
     }
 
-    /// The "Today" and "This month" tiles. Only Claude has them.
-    static func usageTiles(_ account: UsageAccount, language: UILanguage) -> [UsageTile] {
-        guard account.provider == "claude", let usage = account.usage else { return [] }
+    /// The "Today" and "This month" tiles, for Claude and ChatGPT accounts (the cost is USD at API rates for both).
+    ///
+    /// The Quota tab passes `shownPercents` nil: the tiles show the real values and the real colour bar. The Model mix tab
+    /// passes the shares it shows: the bar takes them, and while they differ from the real mix the tile's big value is the
+    /// what-if cost and `costText` stays the real one (the "actual" figure).
+    static func usageTiles(_ account: UsageAccount, mix: AccountModelMix?, shownPercents: [Int]?, language: UILanguage) -> [UsageTile] {
+        guard account.provider == "claude" || account.provider == "codex", let usage = account.usage else { return [] }
+        let trial = shownPercents != nil && mix?.isTrial == true
+        let todayTrial = trial ? mix?.today?.panel(percents: mix?.shown.percents ?? []).totalCost : nil
+        let monthTrial = trial ? mix?.shown.totalCost : nil
         return [
-            tile(title: L10n.text(.today, language), bucket: usage.today, language: language),
-            tile(title: L10n.text(.thisMonth, language), bucket: usage.month, language: language),
+            tile(title: L10n.text(.today, language), bucket: usage.today, basis: mix?.today, shown: shownPercents, trialCost: todayTrial, language: language),
+            tile(title: L10n.text(.thisMonth, language), bucket: usage.month, basis: mix?.month, shown: shownPercents, trialCost: monthTrial, language: language),
         ]
     }
 
-    private static func tile(title: String, bucket: UsageBucket?, language: UILanguage) -> UsageTile {
+    private static func tile(
+        title: String, bucket: UsageBucket?, basis: ModelMixBasis?, shown: [Int]?, trialCost: Double?, language: UILanguage
+    ) -> UsageTile {
         let tokens = bucket?.tokens.map { L10n.tokens(UsageFormat.tokensText($0), language) } ?? "—"
         let cost = bucket?.costUsd.map { "~\(UsageFormat.moneyText($0))" }
-        return UsageTile(title: title, tokensText: tokens, costText: cost)
+        var result = UsageTile(title: title, tokensText: tokens, costText: cost)
+        if let basis {
+            let percents = shown ?? basis.realPercents
+            if percents.count == basis.models.count {
+                result.bar = zip(basis.models, percents).map { model, percent in
+                    TileBarSegment(family: model.price.family, label: model.price.label, percent: percent)
+                }
+            }
+        }
+        if let trialCost {
+            result.trialCostText = "~\(UsageFormat.moneyText(trialCost))"
+        }
+        return result
+    }
+
+    // MARK: Popover total
+
+    /// The provider order of the popover line, and the names it shows.
+    static let popoverProviders = ["claude", "codex"]
+
+    /// Sums each provider's accounts that have a mix, in whole cents. Only the accounts in `accounts` count, which are
+    /// the shown ones (the collector writes the enabled accounts only).
+    static func popoverTotal(accounts: [UsageAccount], mixes: [String: AccountModelMix]) -> PopoverTotal? {
+        var cents: [String: Int] = [:]
+        var trial: [String: Bool] = [:]
+        for account in accounts {
+            guard let mix = mixes[account.id] else { continue }
+            cents[mix.provider, default: 0] += mix.shown.totalCents
+            trial[mix.provider, default: false] = trial[mix.provider, default: false] || mix.isTrial
+        }
+        let parts = popoverProviders.compactMap { provider -> PopoverTotal.Part? in
+            guard let value = cents[provider] else { return nil }
+            return PopoverTotal.Part(provider: provider, cents: value, isTrial: trial[provider] ?? false)
+        }
+        return parts.isEmpty ? nil : PopoverTotal(parts: parts)
+    }
+
+    /// The name of a provider in the popover line: "Claude" and "GPT".
+    static func popoverName(_ provider: String) -> String {
+        provider == "codex" ? "GPT" : "Claude"
+    }
+
+    /// "≈ $48.40 เดือนนี้ · Claude $31.26 · GPT $17.14" with a trial part marked "(ทดลอง)".
+    static func popoverText(_ total: PopoverTotal, language: UILanguage) -> String {
+        let parts = total.parts.map { part -> String in
+            let text = "\(popoverName(part.provider)) \(UsageFormat.moneyText(cents: part.cents))"
+            return part.isTrial ? L10n.trialMarker(text, language) : text
+        }
+        return L10n.popoverTotal(total: UsageFormat.moneyText(cents: total.totalCents), parts: parts, language)
     }
 
     // MARK: Time and status

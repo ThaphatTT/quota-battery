@@ -42,7 +42,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 SCHEMA = 1
-CACHE_VERSION = 2  # 2: the token-log cache is kept per account
+CACHE_VERSION = 3  # 2: the token-log cache is kept per account. 3: Codex keeps one record per turn
 DAY_ZONE = None  # zone for the day and month totals; None = this Mac's own zone, looked up per moment (DST-aware)
 HTTP_TIMEOUT = 20
 NOTIFY_THRESHOLDS = (80, 95)
@@ -919,6 +919,40 @@ def cost_usd(model: str, inp: int, out: int, cw5m: int, cw1h: int, cr: int):
     return None
 
 
+# The four latest models shown in the Mac model-mix section, in the order of the app's default list.
+PRICE_MODELS = (("claude-opus-5-5", "opus", "Opus 5.5"), ("claude-sonnet-5-5", "sonnet", "Sonnet 5.5"),
+                ("claude-haiku-5-5", "haiku", "Haiku 5.5"), ("claude-fable-5-2", "fable", "Fable 5.2"))
+
+
+def base_prices(model: str):
+    """(input, cache write 5m, cache write 1h, cache read, output) per million tokens for the base tier of
+    the first PRICE_TABLE pattern that matches the model id. None when there is no price."""
+    for pattern, tiers in PRICE_TABLE:
+        if re.search(pattern, model):
+            return tiers[0][1]
+    return None
+
+
+def model_prices() -> dict:
+    """usage.json model_prices, read from PRICE_TABLE so the numbers are kept in one place only."""
+    prices = {}
+    for model, family, label in PRICE_MODELS:
+        found = base_prices(model)
+        if found is None:
+            continue
+        p_in, p_cw5m, p_cw1h, p_cr, p_out = found
+        prices[model] = {"provider": "anthropic", "family": family, "label": label, "input": p_in,
+                         "cache_write_5m": p_cw5m, "cache_write_1h": p_cw1h, "cache_read": p_cr, "output": p_out}
+    for model_id, _pattern, family, label, short, long_rates in GPT_PRICES:
+        p_in, p_cached, p_cache_write, p_out = short
+        l_in, l_cached, l_out = long_rates
+        prices[model_id] = {"provider": "openai", "family": family, "label": label, "input": p_in,
+                            "cached_input": p_cached, "cache_write": p_cache_write, "output": p_out,
+                            "long_context": {"threshold": GPT_LONG_CONTEXT, "input": l_in,
+                                             "cached_input": l_cached, "output": l_out}}
+    return prices
+
+
 def dedupe_key(message_id, request_id, uuid, path, lineno) -> str:
     """Hashed so no message or request id is stored in the cache in clear text."""
     if isinstance(message_id, str) and message_id and isinstance(request_id, str) and request_id:
@@ -972,21 +1006,38 @@ def parse_claude_file(path: Path, cutoff_day: str):
     return records
 
 
+FAMILIES = ("opus", "sonnet", "haiku", "fable")
+FAMILY_KEYS = FAMILIES + ("other",)  # "other" = a Claude model id that matches no known family
+KINDS = ("input", "output", "cache_write_5m", "cache_write_1h", "cache_read")
+
+
+def family_of(model: str) -> str:
+    """Family by id prefix: claude-opus-*, claude-sonnet-*, claude-haiku-*, claude-fable-*. Anything else is other."""
+    for family in FAMILIES:
+        if model.startswith(f"claude-{family}-"):
+            return family
+    return "other"
+
+
 class Bucket:
     def __init__(self):
         self.tokens = 0
         self.cost = 0.0
         self.unknown = False
+        self.families = {family: dict.fromkeys(KINDS, 0) for family in FAMILY_KEYS}
 
-    def add(self, tokens: int, cost):
+    def add(self, tokens: int, cost, family: str, kinds):
         self.tokens += tokens
         if cost is None:
             self.unknown = True
         else:
             self.cost += cost
+        for kind, count in zip(KINDS, kinds):
+            self.families[family][kind] += count
 
     def result(self):
-        return {"tokens": self.tokens, "cost_usd": None if self.unknown else round(self.cost, 2)}
+        return {"tokens": self.tokens, "cost_usd": None if self.unknown else round(self.cost, 2),
+                "by_family": {family: dict(kinds) for family, kinds in self.families.items()}}
 
 
 def summarize_claude(records, now: datetime):
@@ -1003,10 +1054,12 @@ def summarize_claude(records, now: datetime):
         _, day, model, inp, out, cw5m, cw1h, cr = record
         tokens = inp + out + cw5m + cw1h + (cr if TOKENS_INCLUDE_CACHE_READS else 0)
         cost = cost_usd(model, inp, out, cw5m, cw1h, cr)
+        family = family_of(model)
+        kinds = (inp, out, cw5m, cw1h, cr)
         if day == today:
-            buckets["today"].add(tokens, cost)
+            buckets["today"].add(tokens, cost, family, kinds)
         if day.startswith(month):
-            buckets["month"].add(tokens, cost)
+            buckets["month"].add(tokens, cost, family, kinds)
     return {name: bucket.result() for name, bucket in buckets.items()}
 
 
@@ -1191,36 +1244,171 @@ def parse_codex_usage(doc, now: datetime):
     return plan, limits, credits
 
 
+# GPT (Codex) prices per million tokens, standard tier.
+# Source: https://developers.openai.com/api/docs/pricing (the target of platform.openai.com/docs/pricing; read 2026-11-20).
+# Short context: up to 272,000 input tokens. Long context: a turn with more input than that is priced at the
+# long-context rates. The long-context table has no cache write price, so the short cache write rate is used there.
+# The cache write rate is the 30-minute rate, since the log does not say which retention was used.
+# Reasoning has no price of its own; it is billed as output (see gpt_cost_usd).
+GPT_LONG_CONTEXT = 272_000
+# (model id, id pattern, family, label, (input, cached input, cache write, output), (long input, long cached input, long output))
+GPT_PRICES = (
+    ("gpt-6-luna", r"^gpt-6-luna(-|$)", "luna", "GPT-6 Luna",
+     (0.10, 0.01, 0.125, 0.50), (0.20, 0.02, 0.75)),
+    ("gpt-6.2-sol", r"^gpt-6\.2-sol(-|$)", "sol", "GPT-6.2 Sol",
+     (2.00, 0.10, 2.50, 10.00), (4.00, 0.20, 15.00)),
+    ("gpt-6.1-sol", r"^gpt-6\.1-sol(-|$)", "sol", "GPT-6.1 Sol",
+     (2.00, 0.10, 2.50, 10.00), (4.00, 0.20, 15.00)),
+)
+CODEX_KINDS = ("input", "cached_input", "cache_write", "output", "reasoning")
+CODEX_UNKNOWN_MODEL = "unknown"  # a turn with no model in its session log
+
+
+def gpt_model_id(model) -> str:
+    """The price table's id when the model matches a row, else the logged name (lower case, 64 characters at most),
+    or "unknown" when the log names no model."""
+    if not isinstance(model, str) or not model.strip():
+        return CODEX_UNKNOWN_MODEL
+    name = model.strip().lower()
+    for row in GPT_PRICES:
+        if re.search(row[1], name):
+            return row[0]
+    return name[:64]
+
+
+def gpt_price_row(model_id: str):
+    for row in GPT_PRICES:
+        if row[0] == model_id:
+            return row
+    return None
+
+
+def gpt_cost_usd(model_id: str, inp: int, cached: int, cache_write: int, output: int, extra_reasoning: int):
+    """Estimated API list-price cost of one turn in USD, or None when the model has no price here.
+    inp is input_tokens as logged (it includes cached input). The plain input is inp minus cached, and cache
+    writes are a separate kind. extra_reasoning is the reasoning count that output_tokens does not include
+    (0 when the log says output already includes it)."""
+    row = gpt_price_row(model_id)
+    if row is None:
+        return None
+    short, long_rates = row[4], row[5]
+    if inp > GPT_LONG_CONTEXT:
+        p_in, p_cached, p_out = long_rates
+        p_cache_write = short[2]
+    else:
+        p_in, p_cached, p_cache_write, p_out = short
+    plain = max(inp - cached, 0)
+    billed_output = output + extra_reasoning
+    return (plain * p_in + cached * p_cached + cache_write * p_cache_write + billed_output * p_out) / 1_000_000
+
+
 def parse_codex_file(path: Path, cutoff_day: str):
-    """Per-day token totals from token_count events, using the per-turn last_token_usage."""
-    days = {}
+    """One record per turn in one session log: [key, day, model id, input, cached input, cache write, output,
+    reasoning, extra reasoning billed as output, tokens]. A turn is the last_token_usage of a token_count event,
+    never the running total. The model comes from the latest turn_context line before the event.
+
+    Reasoning: the Codex log has last_usage_includes_reasoning on token_count info. When it is false, the
+    reasoning tokens are not in output_tokens, so they are billed as output. When it is true, or missing (the
+    OpenAI convention: reasoning is part of output_tokens), nothing is added, so reasoning is never counted twice."""
+    records = []
+    model_now = None
     try:
         handle = open(path, "rb")
     except OSError:
-        return days
+        return records
     with handle:
         for raw in handle:
-            if b"token_count" not in raw:
+            if b"token_count" not in raw and b"turn_context" not in raw:
                 continue
             try:
                 line = json.loads(raw)
             except ValueError:
                 continue
             payload = line.get("payload") if isinstance(line, dict) else None
-            if not isinstance(payload, dict) or payload.get("type") != "token_count":
+            if not isinstance(payload, dict):
+                continue
+            if line.get("type") == "turn_context":
+                if isinstance(payload.get("model"), str):
+                    model_now = payload["model"]
+                continue
+            if payload.get("type") != "token_count":
                 continue
             info = payload.get("info")
             last = info.get("last_token_usage") if isinstance(info, dict) else None
             if not isinstance(last, dict):
                 continue
-            tokens = to_int(last.get("total_tokens"))
-            if tokens is None:
-                tokens = (to_int(last.get("input_tokens")) or 0) + (to_int(last.get("output_tokens")) or 0)
-            day = local_day(line.get("timestamp"))
+            stamp = line.get("timestamp")
+            day = local_day(stamp)
             if day is None or day < cutoff_day:
                 continue
-            days[day] = days.get(day, 0) + tokens
-    return days
+            model_id = gpt_model_id(info.get("model") or payload.get("model") or model_now)
+            inp = to_int(last.get("input_tokens")) or 0
+            cached = to_int(last.get("cached_input_tokens")) or 0
+            cache_write = to_int(last.get("cache_write_input_tokens")) or 0
+            output = to_int(last.get("output_tokens")) or 0
+            reasoning = to_int(last.get("reasoning_output_tokens")) or 0
+            extra = reasoning if info.get("last_usage_includes_reasoning") is False else 0
+            tokens = to_int(last.get("total_tokens"))
+            if tokens is None:
+                tokens = inp + output + extra
+            # Hashed, so no content of the log is kept as a readable key. The same turn can sit in two files
+            # (a resumed session copies its earlier events), so the key is the turn itself, not the file.
+            raw_key = json.dumps([stamp, model_id, last], sort_keys=True)
+            key = hashlib.sha1(raw_key.encode("utf-8")).hexdigest()[:20]
+            records.append([key, day, model_id, inp, cached, cache_write, output, reasoning, extra, tokens])
+    return records
+
+
+class CodexBucket:
+    def __init__(self):
+        self.tokens = 0
+        self.cost = 0.0
+        self.unknown = False
+        self.models = {row[0]: dict.fromkeys(CODEX_KINDS, 0) for row in GPT_PRICES}
+        self.long = {}  # model id -> kinds of its turns above GPT_LONG_CONTEXT only; a model with none has no entry
+
+    def add(self, model_id: str, tokens: int, cost, kinds, long_turn: bool = False):
+        self.tokens += tokens
+        if cost is None:
+            self.unknown = True
+        else:
+            self.cost += cost
+        bucket = self.models.setdefault(model_id, dict.fromkeys(CODEX_KINDS, 0))
+        for kind, count in zip(CODEX_KINDS, kinds):
+            bucket[kind] += count
+        if long_turn:
+            long_bucket = self.long.setdefault(model_id, dict.fromkeys(CODEX_KINDS, 0))
+            for kind, count in zip(CODEX_KINDS, kinds):
+                long_bucket[kind] += count
+
+    def result(self):
+        by_model = {}
+        for model, kinds in self.models.items():
+            entry = dict(kinds)  # the totals: short and long turns together
+            if model in self.long:
+                entry["long_context"] = dict(self.long[model])  # the part of the totals from turns over 272K
+            by_model[model] = entry
+        return {"tokens": self.tokens, "cost_usd": None if self.unknown else round(self.cost, 2),
+                "by_model": by_model}
+
+
+def summarize_codex(records, now: datetime):
+    seen = {}
+    for record in records:  # the same turn can appear in more than one file: count it once
+        seen.setdefault(record[0], record)
+    today = local_today(now)
+    month = today[:7]
+    buckets = {"today": CodexBucket(), "month": CodexBucket()}
+    for record in seen.values():
+        _, day, model_id, inp, cached, cache_write, output, reasoning, extra, tokens = record
+        cost = gpt_cost_usd(model_id, inp, cached, cache_write, output, extra)
+        kinds = (max(inp - cached, 0), cached, cache_write, output, reasoning)
+        long_turn = inp > GPT_LONG_CONTEXT  # the same rule as gpt_cost_usd: this turn is priced at long-context rates
+        if day == today:
+            buckets["today"].add(model_id, tokens, cost, kinds, long_turn)
+        if day.startswith(month):
+            buckets["month"].add(model_id, tokens, cost, kinds, long_turn)
+    return {name: bucket.result() for name, bucket in buckets.items()}
 
 
 def codex_local_usage(env: Env, source=None):
@@ -1236,7 +1424,7 @@ def codex_local_usage(env: Env, source=None):
     cutoff_epoch = day_start_epoch(cutoff_day)
     store = account_cache(env, "codex", source)
     current = {}
-    totals = {}
+    records = []
     for path in files:
         try:
             stat = path.stat()
@@ -1247,19 +1435,14 @@ def codex_local_usage(env: Env, source=None):
         key = str(path)
         entry = store.get(key)
         if not (isinstance(entry, dict) and entry.get("mtime_ns") == stat.st_mtime_ns
-                and entry.get("size") == stat.st_size):
+                and entry.get("size") == stat.st_size and isinstance(entry.get("records"), list)):
             entry = {"mtime_ns": stat.st_mtime_ns, "size": stat.st_size,
-                     "days": parse_codex_file(path, cutoff_day)}
+                     "records": parse_codex_file(path, cutoff_day)}
         current[key] = entry
-        for day, tokens in entry["days"].items():
-            totals[day] = totals.get(day, 0) + tokens
+        records.extend(entry["records"])
     store.clear()
     store.update(current)
-    today = local_today(env.now)
-    month = today[:7]
-    month_tokens = sum(tokens for day, tokens in totals.items() if day.startswith(month))
-    return {"today": {"tokens": totals.get(today, 0), "cost_usd": None},
-            "month": {"tokens": month_tokens, "cost_usd": None}}
+    return summarize_codex(records, env.now)
 
 
 def fetch_codex_direct(env: Env, source):
@@ -1844,7 +2027,8 @@ def write_known_accounts(paths: Paths, sources, now: datetime) -> None:
 
 
 def build_document(now: datetime, accounts) -> dict:
-    return {"schema": SCHEMA, "generated_at": iso_z(now), "accounts": accounts}
+    return {"schema": SCHEMA, "generated_at": iso_z(now), "accounts": accounts,
+            "model_prices": model_prices()}
 
 
 def serialize(doc) -> bytes:

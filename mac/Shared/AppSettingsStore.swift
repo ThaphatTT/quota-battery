@@ -59,7 +59,8 @@ enum AppSettingsStore {
         try data.write(to: url, options: .atomic)
     }
 
-    private static func readObject(at url: URL) -> [String: Any] {
+    /// The settings object as a dictionary. A missing or broken file reads as an empty object.
+    static func readObject(at url: URL) -> [String: Any] {
         guard
             let data = try? Data(contentsOf: url),
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]

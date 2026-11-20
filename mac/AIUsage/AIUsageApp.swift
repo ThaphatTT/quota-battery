@@ -15,6 +15,11 @@ struct AIUsageApp: App {
         .windowResizability(.contentMinSize)
         .windowBackgroundDragBehavior(.enabled)
         .defaultSize(width: 530, height: 705)
+
+        // The Settings window: ⌘, and the gear in the app window open it.
+        Settings {
+            AppSettingsView(model: appDelegate.model, openAtLogin: appDelegate.openAtLogin)
+        }
     }
 }
 
@@ -23,6 +28,8 @@ struct AIUsageApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = UsageViewModel()
+    /// The "Open at login" switch of the Settings window. It is the system's login item, not a settings.json key.
+    let openAtLogin = OpenAtLoginModel(service: MainAppLoginItem())
 
     /// Opens the app window. The window sets it each time it appears, so it still works after the window was closed.
     var openMainWindowAction: (() -> Void)?
@@ -61,23 +68,23 @@ private struct MainWindowHost: View {
     @ObservedObject var model: UsageViewModel
     let register: (@escaping () -> Void) -> Void
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         ContentView(
             state: model.state,
-            accounts: model.accountsPanel,
-            accountActions: AccountActions(
-                rescan: { model.refresh() },
-                add: { model.addAccount(provider: $0) },
-                rename: { model.renameAccount($0, to: $1) },
-                setEnabled: { model.setAccountEnabled($0, $1) },
-                move: { model.moveAccount($0, onto: $1) },
-                setSort: { model.setAccountSort($0) },
-                setDirectMode: { model.setDirectMode($0, enabled: $1) }
+            modelMixActions: ModelMixActions(
+                setPercent: { model.setModelMixPercent($0, $1, to: $2) },
+                moveOnto: { model.moveModelMix($0, $1, onto: $2) },
+                step: { model.stepModelMix($0, $1, by: $2) },
+                reset: { model.resetModelMix($0) },
+                commitPercent: { model.commitModelMixPercent($0, $1) }
             ),
-            languageChoice: model.languageChoice,
-            onSetLanguage: { model.setLanguage($0) },
             onRefresh: { model.refresh() },
+            onOpenSettings: {
+                NSApp.activate(ignoringOtherApps: true)
+                openSettings()
+            },
             onOpenLogs: { AppLinks.openLogsFolder() }
         )
         .environment(\.uiLanguage, model.uiLanguage)

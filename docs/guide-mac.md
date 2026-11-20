@@ -15,7 +15,7 @@
 | macOS | 27.2.1 |
 | Xcode | 27.2 |
 | Python 3 | 3.15.2 (จาก Homebrew) |
-| แอป AI Usage | 0.1.0 |
+| แอป Quota Battery | 0.2.0 |
 | iPhone (ถ้าใช้วิดเจ็ตบน iPhone) | iPhone, iOS 27.2.1, แอป Scriptable (ฟรี) |
 | Hidden Bar (ไม่บังคับ) | 1.13.1 |
 

@@ -22,6 +22,6 @@ What is done, what is in progress, what is next, and where help is wanted. To ge
 
 ## Help wanted
 
-- Windows (see [windows/README.md](windows/README.md))
+- Windows port, community, help wanted (see [windows/README.md](windows/README.md)). Suggested approach: a tray app in Python with PySide6, packaged with BeeWare Briefcase.
 - Linux
 - More providers

@@ -37,6 +37,17 @@ struct MenuBarPopoverView: View {
             rows
                 .padding(.horizontal, 4)
                 .padding(.vertical, 4)
+            if let total = state.popoverTotal {
+                Divider()
+                Text(AppUsageInsights.popoverText(total, language: language))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+            }
             Divider()
             footer
             Divider()

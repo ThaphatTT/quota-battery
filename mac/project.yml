@@ -7,8 +7,8 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     CODE_SIGN_STYLE: Automatic
-    MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "2"
 # The Team id lives in mac/Local.xcconfig (not committed), included by Config/Base.xcconfig.
 # It is not set here: a value in settings.base would override the xcconfig.
 configFiles:
@@ -91,6 +91,17 @@ targets:
       - path: AIUsage/MenuBarPopoverView.swift
       - path: AIUsage/AppAccountsSection.swift
       - path: AIUsage/AppDirectModeConsent.swift
+      - path: AIUsage/AppModelMixSection.swift
+      # The Settings window's panes and the open-at-login model (the system login item is not in the tests: they use a fake).
+      - path: AIUsage/AppSettingsWindow.swift
+      - path: AIUsage/OpenAtLogin.swift
+      # The window content and the model, so the performance and publish-count tests can drive them.
+      - path: AIUsage/ContentView.swift
+      - path: AIUsage/AppSettings.swift
+      - path: AIUsage/UsageViewModel.swift
+      - path: AIUsage/MenuBarStatusItem.swift
+      - path: AIUsage/TerminalLauncher.swift
+      - path: AIUsage/LocalUsageRing.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: local.aiusage.AIUsageTests

@@ -125,6 +125,8 @@ final class StatusItemController: NSObject {
 extension StatusItemController: NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         lastClosedAt = Date()
+        // The closed popover's views would still follow the model, so they are let go until the next opening.
+        popover.contentViewController = nil
     }
 }
 

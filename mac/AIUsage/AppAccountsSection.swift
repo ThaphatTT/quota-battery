@@ -68,7 +68,6 @@ struct AppAccountsSection: View {
                         AccountRowView(
                             row: row,
                             canReorder: state.sort == .manual,
-                            directMode: state.directMode,
                             actions: actions,
                             snapshot: snapshot
                         )
@@ -151,18 +150,16 @@ struct AppAccountsSection: View {
 }
 
 /// One account in the section: the drag handle, the brand icon, the name (tap to rename) with the New tag, the source
-/// and the plan, then for ChatGPT and agy the direct mode control, and the show and hide switch. A hidden account is dimmed.
+/// and the plan, and the show and hide switch. A hidden account is dimmed. The direct mode control is in the Direct mode pane.
 private struct AccountRowView: View {
     let row: AccountListRow
     let canReorder: Bool
-    let directMode: DirectModeSettings
     let actions: AccountActions
     let snapshot: Bool
     @Environment(\.uiLanguage) private var language
     @State private var editing = false
     @State private var draft = ""
     @State private var isDropTarget = false
-    @State private var showConsent = false
     @FocusState private var fieldFocused: Bool
 
     var body: some View {
@@ -189,9 +186,6 @@ private struct AccountRowView: View {
                         PlanTag(text: plan)
                     }
                 }
-                if DirectMode.isAvailable(row.provider) {
-                    directModeLine
-                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             switchControl
@@ -212,37 +206,6 @@ private struct AccountRowView: View {
                 actions.move(dragged, row.id)
                 return true
             } isTargeted: { isDropTarget = $0 }
-        }
-    }
-
-    /// ChatGPT and agy rows only. Off: a button that opens the consent screen. On: the state, and a button that turns the
-    /// mode off at once. Turning it off needs no consent, so it has no screen. The switch is per provider, not per account.
-    private var directModeLine: some View {
-        HStack(spacing: 8) {
-            if directMode.isOn(row.provider) {
-                Circle()
-                    .fill(LocalPalette.healthy)
-                    .frame(width: 7, height: 7)
-                Text(L10n.text(.directModeOn, language))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                Button(L10n.text(.directModeTurnOff, language)) {
-                    actions.setDirectMode(row.provider, false)
-                }
-                .controlSize(.small)
-            } else {
-                Button(L10n.text(.directModeTurnOnAction, language)) {
-                    showConsent = true
-                }
-                .controlSize(.small)
-            }
-        }
-        .padding(.top, 2)
-        .sheet(isPresented: $showConsent) {
-            DirectModeConsentView(provider: row.provider, snapshot: snapshot) { provider in
-                actions.setDirectMode(provider, true)
-            }
-            .environment(\.uiLanguage, language)
         }
     }
 
@@ -332,7 +295,7 @@ private struct NewTag: View {
 }
 
 /// A look-alike of the native switch, drawn with shapes. Used only by the snapshot (see `AppAccountsSection.snapshot`).
-private struct SwitchLook: View {
+struct SwitchLook: View {
     let isOn: Bool
 
     var body: some View {
@@ -349,10 +312,11 @@ private struct SwitchLook: View {
     }
 }
 
-/// A look-alike of the segmented control, drawn with shapes. Used only by the snapshot (see `AppAccountsSection.snapshot`).
-private struct SegmentedLook: View {
-    let selection: AccountSort
-    let options: [(AccountSort, String)]
+/// A look-alike of the segmented control, drawn with shapes. Used only by the snapshots (see `AppAccountsSection.snapshot`
+/// and `AppAccountCardView.snapshot`).
+struct SegmentedLook<Value: Hashable>: View {
+    let selection: Value
+    let options: [(Value, String)]
 
     var body: some View {
         HStack(spacing: 0) {

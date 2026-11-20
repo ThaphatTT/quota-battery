@@ -74,7 +74,7 @@ The collector writes one file, `usage.json` (schema 1). The Mac app, the Mac wid
 
 ## Good first issues
 
-- **Windows port.** The biggest open item. See [windows/README.md](windows/README.md).
+- **Windows port.** The biggest open item, built by the community. The suggested approach is a tray app in Python with PySide6, packaged with BeeWare Briefcase. See [windows/README.md](windows/README.md).
 - **A Linux collector.** The collector already uses only the standard library, which helps. Check on a real Linux machine that the `claude`, `codex` and `agy` CLIs run there, and where agy keeps its login if direct mode is needed, before you write any code.
 - **More providers.** Add a provider to the collector, add its `provider` value to [docs/usage-json.md](docs/usage-json.md), and add tests. Check the endpoint with a real login first.
 
@@ -98,5 +98,5 @@ Keep each pull request to one topic. Report a bug with the bug report template, 
   - ห้าม log หรือ commit โทเค็น (รหัสลับที่ใช้ล็อกอิน) และห้ามวางการล็อกอินใด ๆ ลงใน issue หรือ pull request
   - endpoint ของผู้ให้บริการไม่ได้เป็นทางการ อาจเปลี่ยนหรือหยุดทำงานได้ทุกเมื่อ
   - ข้อความที่ผู้ใช้เห็นต้องมีทั้งภาษาไทยและภาษาอังกฤษในการแก้ไขเดียวกัน
-- **งานสำหรับมือใหม่:** พอร์ตไป Windows, ตัวเก็บข้อมูลสำหรับ Linux และผู้ให้บริการ AI รายอื่น
+- **งานสำหรับมือใหม่:** พอร์ตไป Windows (ชุมชนเป็นผู้ทำ มีแนวทางที่แนะนำใน windows/README.md), ตัวเก็บข้อมูลสำหรับ Linux และผู้ให้บริการ AI รายอื่น
 - **ส่งงาน:** fork โปรเจกต์ สร้าง branch สำหรับการแก้ไข แล้วเปิด pull request

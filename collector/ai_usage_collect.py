@@ -1963,14 +1963,14 @@ def notification_text(language: str, account: dict, limit: dict, threshold: int,
     """(title, text) of one alert. threshold is 80 or 95."""
     percent = f"{used:.0f}%"
     if language == "th":
-        title = "การใช้งาน AI"
+        title = "Quota Battery"
         if threshold >= 95:
             return title, f"{account['label']} · {limit['label']} ใกล้เต็มแล้ว {percent}"
         return title, f"{account['label']} · {limit['label']} ใช้ไปแล้ว {percent}"
     label = english_limit_label(limit)
     if threshold >= 95:
-        return "AI Usage", f"{account['label']} · {label} near limit, {percent} used"
-    return "AI Usage", f"{account['label']} · {label} used {percent}"
+        return "Quota Battery", f"{account['label']} · {label} near limit, {percent} used"
+    return "Quota Battery", f"{account['label']} · {label} used {percent}"
 
 
 def notify_pass(env: Env, accounts, notify_file: Path, language: str = "en", send: bool = True) -> None:

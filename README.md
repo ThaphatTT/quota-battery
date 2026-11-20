@@ -23,8 +23,8 @@ notifications come at 80% and 95% of a limit.
 ## How to use
 
 1. **Install.** The easy way: ask your coding assistant (for example Claude Code or Codex) to follow [AGENTS.md](AGENTS.md). By hand: follow [docs/guide-mac.md](docs/guide-mac.md).
-2. **Open the app once.** Open **AI Usage**. The widget appears in the widget list only after the app has been opened.
-3. **Add the widget.** Right-click an empty part of the desktop, choose **Edit Widgets**, search for **AI Usage**, pick a size and add it.
+2. **Open the app once.** Open **Quota Battery**. The widget appears in the widget list only after the app has been opened.
+3. **Add the widget.** Right-click an empty part of the desktop, choose **Edit Widgets**, search for **Quota Battery**, pick a size and add it.
 4. **Read the battery.** It shows how much quota you have **left**. White means plenty is left (more than 20%). Yellow means 6 to 20% is left. Red means 5% or less is left.
 5. **Check the menu bar icon.** It shows the account with the least quota left, as a ring and a number. Click it to see the details.
 6. **Choose the language.** Near the bottom of the app window, under the two switches, choose **System**, **ไทย** or **English**.
@@ -96,7 +96,7 @@ Or do it yourself, starting from [AGENTS.md](AGENTS.md). In short:
 2. `collector/install.sh` installs the collector as a launchd job.
 3. Copy `mac/Local.xcconfig.example` to `mac/Local.xcconfig`, put your Team id in it, then run
    `scripts/build-mac.sh`. The app is installed in `~/Applications`. Open it once.
-4. Add the **AI Usage** widget from the macOS widget gallery.
+4. Add the **Quota Battery** widget from the macOS widget gallery.
 5. iPhone (optional): see [scriptable/README.md](scriptable/README.md).
 
 To remove everything, see the uninstall step in [AGENTS.md](AGENTS.md).
@@ -142,8 +142,8 @@ MIT. See [LICENSE](LICENSE).
 ## วิธีใช้งาน
 
 1. **ติดตั้ง** วิธีที่ง่ายที่สุดคือให้ผู้ช่วยเขียนโค้ด (เช่น Claude Code หรือ Codex) ทำตามไฟล์ [AGENTS.md](AGENTS.md) ซึ่งเป็นคู่มือขั้นตอนติดตั้งสำหรับผู้ช่วย ถ้าอยากทำเองทีละขั้น ให้ทำตาม [docs/guide-mac.md](docs/guide-mac.md)
-2. **เปิดแอปหนึ่งครั้ง** เปิดแอป **AI Usage** วิดเจ็ตจะขึ้นในรายการวิดเจ็ตได้ก็ต่อเมื่อเปิดแอปแล้วเท่านั้น
-3. **เพิ่มวิดเจ็ต** คลิกขวาที่พื้นที่ว่างบนเดสก์ท็อป เลือก **Edit Widgets** ค้นหา **AI Usage** เลือกขนาด แล้วกดเพิ่ม
+2. **เปิดแอปหนึ่งครั้ง** เปิดแอป **Quota Battery** วิดเจ็ตจะขึ้นในรายการวิดเจ็ตได้ก็ต่อเมื่อเปิดแอปแล้วเท่านั้น
+3. **เพิ่มวิดเจ็ต** คลิกขวาที่พื้นที่ว่างบนเดสก์ท็อป เลือก **Edit Widgets** ค้นหา **Quota Battery** เลือกขนาด แล้วกดเพิ่ม
 4. **อ่านแถบแบตเตอรี่** แถบจะแสดงว่าโควตายัง **เหลือ** อยู่เท่าไร สีขาว = ยังเหลือเยอะ (มากกว่า 20%) สีเหลือง = เหลือ 6 ถึง 20% สีแดง = เหลือ 5% หรือน้อยกว่า
 5. **ดูไอคอนบนแถบเมนู** (แถบด้านบนสุดของจอ) ไอคอนจะแสดงบัญชีที่โควตาเหลือน้อยที่สุด เป็นวงแหวนกับตัวเลข คลิกเพื่อดูรายละเอียด
 6. **เลือกภาษา** ใกล้ด้านล่างของหน้าต่างแอป ใต้สวิตช์สองตัว เลือก **ตามระบบ**, **ไทย** หรือ **English**
@@ -211,7 +211,7 @@ MIT. See [LICENSE](LICENSE).
 2. `collector/install.sh` ติดตั้งตัวเก็บข้อมูลเป็นงาน launchd
 3. คัดลอก `mac/Local.xcconfig.example` เป็น `mac/Local.xcconfig` แล้วใส่ Team id ของคุณ จากนั้นรัน
    `scripts/build-mac.sh` แอปจะถูกติดตั้งใน `~/Applications` เปิดแอปหนึ่งครั้ง
-4. เพิ่มวิดเจ็ต **AI Usage** จากหน้าวิดเจ็ตของ macOS
+4. เพิ่มวิดเจ็ต **Quota Battery** จากหน้าวิดเจ็ตของ macOS
 5. iPhone (ไม่บังคับ): ดู [scriptable/README.md](scriptable/README.md)
 
 ถ้าต้องการถอนการติดตั้งทั้งหมด ดูขั้นตอนถอนการติดตั้งใน [AGENTS.md](AGENTS.md)

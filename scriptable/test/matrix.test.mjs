@@ -868,6 +868,11 @@ function matrixCases() {
 const KNOWN_OVERFLOW = [
   "medium/th/5 accounts/white/ok largest", "medium/th/5 accounts/yellow/ok largest", "medium/th/5 accounts/red/ok largest",
   "medium/en/5 accounts/white/ok largest", "medium/en/5 accounts/yellow/ok largest", "medium/en/5 accounts/red/ok largest",
+  // The small Thai header "Quota Battery" (owner decision: keep the size): about 1.5 pt wide by estimate at the largest
+  // frame. It shrinks about 1% through minimumScaleFactor on a device.
+  "small/th/1 accounts/white/ok largest", "small/th/1 accounts/yellow/ok largest", "small/th/1 accounts/red/ok largest",
+  "small/th/3 accounts/white/ok largest", "small/th/3 accounts/yellow/ok largest", "small/th/3 accounts/red/ok largest",
+  "small/th/5 accounts/white/ok largest", "small/th/5 accounts/yellow/ok largest", "small/th/5 accounts/red/ok largest",
 ];
 
 // Both halves of every dynamic text colour must be a six-digit hex, so both appearances have a colour.

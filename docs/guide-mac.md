@@ -133,7 +133,7 @@ scripts/build-mac.sh
 - ถ้า macOS ถามว่า Terminal ควบคุม AIUsage ได้หรือไม่ ให้อนุญาต ถ้าไม่อนุญาต สคริปต์จะบังคับปิดแอปหลัง 10 วินาที
 - ถ้า codesign ขอใช้กุญแจสำหรับเซ็นชื่อ ให้กด **Allow** (หรือ **Always Allow** ถ้ามี)
 
-**คุณจะเห็น:** บรรทัด `ติดตั้งแล้วที่ ...` ตามด้วย `เปิดแอป AIUsage หนึ่งครั้ง แล้วเพิ่มวิดเจ็ต AI Usage จากหน้าวิดเจ็ตของ macOS`
+**คุณจะเห็น:** บรรทัด `ติดตั้งแล้วที่ ...` ตามด้วย `เปิดแอป AIUsage หนึ่งครั้ง แล้วเพิ่มวิดเจ็ต Quota Battery จากหน้าวิดเจ็ตของ macOS`
 
 ถ้าต้องการแค่สร้างโดยไม่ติดตั้ง ใช้ `scripts/build-mac.sh --no-install` ผลจะอยู่ที่ `mac/build/AIUsage.app`
 
@@ -143,12 +143,12 @@ scripts/build-mac.sh
 open "$HOME/Applications/AIUsage.app"
 ```
 
-**คุณจะเห็น:** หน้าต่าง **AI Usage** และไอคอนเล็ก ๆ (วงแหวนกับตัวเลข) บนแถบเมนู วิดเจ็ตจะไปปรากฏในหน้าวิดเจ็ตของ macOS ก็ต่อเมื่อเปิดแอปอย่างน้อยหนึ่งครั้งแล้วเท่านั้น
+**คุณจะเห็น:** หน้าต่าง **Quota Battery** และไอคอนเล็ก ๆ (วงแหวนกับตัวเลข) บนแถบเมนู วิดเจ็ตจะไปปรากฏในหน้าวิดเจ็ตของ macOS ก็ต่อเมื่อเปิดแอปอย่างน้อยหนึ่งครั้งแล้วเท่านั้น
 
 ### ขั้นที่ 7: เพิ่มวิดเจ็ตบน Mac
 
 1. คลิกขวาที่พื้นหลังเดสก์ท็อป แล้วเลือก **Edit Widgets** (แก้ไขวิดเจ็ต)
-2. ค้นหา **AI Usage** ถ้าภาษาของระบบเป็นภาษาไทย ชื่อวิดเจ็ตจะเป็น **การใช้งาน AI** ให้ค้นหาชื่อนั้นแทน
+2. ค้นหา **Quota Battery** ชื่อวิดเจ็ตเป็นชื่อเดียวกันทั้งภาษาไทยและภาษาอังกฤษ
 3. เลือกขนาด (เล็ก กลาง หรือใหญ่) แล้วกด **Add Widget** (เพิ่มวิดเจ็ต)
 
 **คุณจะเห็น:** วิดเจ็ตที่แสดงตัวเลขการใช้งานบนเดสก์ท็อป
@@ -220,7 +220,7 @@ open "$HOME/Applications/AIUsage.app"
 
 **Xcode ถาม Keep Xcode Version หรือ Use Version on Disk** เลือก **Use Version on Disk** เสมอ คำถามนี้เกิดหลังรัน `xcodegen generate` ตอนที่ Xcode เปิดโปรเจกต์ค้างอยู่
 
-**ไม่เห็นวิดเจ็ต AI Usage ในหน้าวิดเจ็ต** เปิดแอปหนึ่งครั้ง (ขั้นที่ 6) แล้วค้นหาตามภาษาของระบบ คือ AI Usage หรือ การใช้งาน AI
+**ไม่เห็นวิดเจ็ต Quota Battery ในหน้าวิดเจ็ต** เปิดแอปหนึ่งครั้ง (ขั้นที่ 6) แล้วค้นหา Quota Battery
 
 **วิดเจ็ตยังแสดงข้อความเก่าหลังอัปเดต** วิดเจ็ตทำงานเป็นโปรเซสของตัวเองชื่อ `AIUsageWidget` และอาจยังรันโค้ดเก่าอยู่ ให้หยุดด้วยคำสั่งนี้ macOS จะเปิดโค้ดใหม่เองเมื่อโหลดวิดเจ็ตครั้งถัดไป
 
@@ -235,7 +235,7 @@ pkill -f "[A]IUsage.app/Contents/PlugIns/AIUsageWidget.appex"
 2. ถ้าแอปไม่ได้เปิดอยู่ ให้เปิดแอป เพราะแอปไม่เปิดเองหลังรีสตาร์ท
 3. ถ้าใช้ Hidden Bar หรือแอปซ่อนไอคอนอื่น
    - บน macOS 27 Hidden Bar รุ่นก่อน 1.11.2 จะซ่อนไอคอนของแอปภายนอกทุกตัว ให้ใช้ 1.11.2 ขึ้นไป (ทดสอบแล้วกับ 1.13.1)
-   - ใน Hidden Bar 1.13.1 เมื่อเปิดแอปใหม่ macOS จะวางไอคอนไว้ในส่วนที่ซ่อน ให้ไปที่ Hidden Bar > Settings > Icons แล้วตั้ง **AI Usage** เป็น **Visible** ในส่วน Pinned sections
+   - ใน Hidden Bar 1.13.1 เมื่อเปิดแอปใหม่ macOS จะวางไอคอนไว้ในส่วนที่ซ่อน ให้ไปที่ Hidden Bar > Settings > Icons แล้วตั้ง **Quota Battery** เป็น **Visible** ในส่วน Pinned sections
 
 **ไม่มีการแจ้งเตือน**
 - ตรวจว่าสวิตช์ **แจ้งเตือนที่ 80% และ 95%** เปิดอยู่
@@ -409,7 +409,7 @@ The script builds a Release app and installs it at `~/Applications/AIUsage.app`,
 - If macOS asks whether Terminal may control AIUsage, allow it. If you refuse, the script force-quits the app after 10 seconds.
 - If codesign asks to use the signing key, click **Allow** (or **Always Allow** if you see it).
 
-**You will see:** `ติดตั้งแล้วที่ ...` (installed at ...) and `เปิดแอป AIUsage หนึ่งครั้ง แล้วเพิ่มวิดเจ็ต AI Usage จากหน้าวิดเจ็ตของ macOS` (open AIUsage once, then add the AI Usage widget).
+**You will see:** `ติดตั้งแล้วที่ ...` (installed at ...) and `เปิดแอป AIUsage หนึ่งครั้ง แล้วเพิ่มวิดเจ็ต Quota Battery จากหน้าวิดเจ็ตของ macOS` (open AIUsage once, then add the Quota Battery widget).
 
 To build without installing, use `scripts/build-mac.sh --no-install`. The app is then at `mac/build/AIUsage.app`.
 
@@ -419,12 +419,12 @@ To build without installing, use `scripts/build-mac.sh --no-install`. The app is
 open "$HOME/Applications/AIUsage.app"
 ```
 
-**You will see:** the **AI Usage** window, and a small icon (a ring with a number) in the menu bar. The widget appears in the macOS widget gallery only after the app has been opened at least once.
+**You will see:** the **Quota Battery** window, and a small icon (a ring with a number) in the menu bar. The widget appears in the macOS widget gallery only after the app has been opened at least once.
 
 ### Step 7: add the Mac widget
 
 1. Right-click the desktop background and choose **Edit Widgets**.
-2. Search for **AI Usage**. If your Mac's system language is Thai, the widget is named **การใช้งาน AI**, so search for that instead.
+2. Search for **Quota Battery**. The widget has the same name in Thai and English.
 3. Choose a size (small, medium or large) and click **Add Widget**.
 
 **You will see:** a widget on the desktop that shows your usage numbers.
@@ -496,7 +496,7 @@ open "$HOME/Applications/AIUsage.app"
 
 **Xcode asks Keep Xcode Version or Use Version on Disk.** Choose **Use Version on Disk**. The question comes after `xcodegen generate` runs while Xcode still has the project open.
 
-**The AI Usage widget is not in the widget gallery.** Open the app once (step 6), then search for the name in your system language: AI Usage, or การใช้งาน AI.
+**The Quota Battery widget is not in the widget gallery.** Open the app once (step 6), then search for **Quota Battery**.
 
 **The widget still shows old text or the old language after an update.** The widget runs as its own process, `AIUsageWidget`, and can keep running the old code. Stop it with this command. macOS starts the new copy the next time it loads the widget.
 
@@ -511,7 +511,7 @@ When no such process exists, `pkill` prints nothing and exits with code 1. That 
 2. If the app is not running, open it. It does not start by itself after a restart.
 3. If you use Hidden Bar or another menu bar hider:
    - On macOS 27, Hidden Bar older than 1.11.2 hides every third-party icon. Use 1.11.2 or newer (tested with 1.13.1).
-   - In Hidden Bar 1.13.1, after the app is relaunched, macOS puts its icon in the hidden section. Open Hidden Bar > Settings > Icons and set **AI Usage** to **Visible** in the Pinned sections.
+   - In Hidden Bar 1.13.1, after the app is relaunched, macOS puts its icon in the hidden section. Open Hidden Bar > Settings > Icons and set **Quota Battery** to **Visible** in the Pinned sections.
 
 **There are no notifications.**
 - Check that **Notify at 80% and 95%** is on.

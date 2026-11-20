@@ -807,6 +807,21 @@ function assertFits(widget, frame, label, { shrink = false, em = 0.5 } = {}) {
   assert.ok(m.w <= frame.w, `${label}: estimated width ${m.w.toFixed(1)} exceeds ${frame.w}`);
 }
 
+// Known overflow at the largest frame, same rule as KNOWN_OVERFLOW in matrix.test.mjs: the Thai small header
+// ("Quota Battery", owner decision: keep the size) is about 1.5 pt wide by estimate and shrinks by about 1% through
+// minimumScaleFactor on a device. Each listed label must still overflow, and nothing else may.
+const KNOWN_SMALL_TH_LARGEST = ["eight/th/small largest", "five/th/small largest", "twelve/th/small largest"];
+function assertFitsExceptKnown(widget, frame, label) {
+  const m = measure(widget, { shrink: false, em: 0.5 });
+  assert.ok(m.h <= frame.h, `${label}: estimated height ${m.h.toFixed(1)} exceeds ${frame.h}`);
+  if (KNOWN_SMALL_TH_LARGEST.includes(label)) {
+    assert.ok(m.w > frame.w, `${label}: known overflow no longer shows, update KNOWN_SMALL_TH_LARGEST`);
+    assert.ok(m.w <= frame.w + 2, `${label}: width ${m.w.toFixed(1)} is more than 2 pt past ${frame.w}`);
+  } else {
+    assert.ok(m.w <= frame.w, `${label}: estimated width ${m.w.toFixed(1)} exceeds ${frame.w}`);
+  }
+}
+
 // Tests ---------------------------------------------------------------------------------------
 
 test("sample fixture: schema 1 with three accounts from the contract", () => {
@@ -819,7 +834,7 @@ test("small: three rings show what is left of each account's highest limit, with
   const w = homeWidget(await render({ family: "small" }));
   assert.deepEqual(rings(w).map((r) => r.number), ["33", "7", "100"]);
   const t = textValues(w);
-  for (const v of ["การใช้งาน AI", "8 นาทีก่อน", "Claude", "ChatGPT", "agy", "สถานะระบบ", "ใกล้หมด 1 รายการ"]) {
+  for (const v of ["Quota Battery", "8 นาทีก่อน", "Claude", "ChatGPT", "agy", "สถานะระบบ", "ใกล้หมด 1 รายการ"]) {
     assert.ok(t.includes(v), `small is missing "${v}"`);
   }
   assert.ok(!t.some((v) => v.includes("%")), "small shows bare numbers in the rings");
@@ -929,7 +944,7 @@ test("small: 79.6 used shows 21 left in gray; 80 used shows 20 left in dark yell
 test("medium: one row per account with what is left, the used share under it, the reset in brackets, and no credit", async () => {
   const w = homeWidget(await render({ family: "medium" }));
   const t = textValues(w);
-  assert.ok(t.includes("การใช้งาน AI"));
+  assert.ok(t.includes("Quota Battery"));
   assert.ok(t.includes("อัปเดต 8 นาทีก่อน"));
   for (const v of ["Claude", "ChatGPT", "agy"]) assert.ok(t.includes(v), `medium is missing "${v}"`);
   for (const v of ["สัปดาห์ (รีเซ็ตใน 5 วัน)", "สัปดาห์ (รีเซ็ตใน 22 ชม.)", "Claude (รีเซ็ตใน 5 ชม.)"]) {
@@ -1099,7 +1114,7 @@ test("used rounds down and left rounds up, so the two always add up to 100", asy
 test("large: the header, the real-time label, the update footer and the fresh dot", async () => {
   const w = homeWidget(await render({ family: "large" }));
   const t = textValues(w);
-  for (const v of ["ขีดจำกัดการใช้งาน AI", "สถานะเรียลไทม์", "อัปเดต 8 นาทีก่อน"]) {
+  for (const v of ["Quota Battery", "สถานะเรียลไทม์", "อัปเดต 8 นาทีก่อน"]) {
     assert.ok(t.includes(v), `large is missing "${v}"`);
   }
   assert.ok(!t.some((v) => v.includes("วันนี้") || v.includes("Extra usage")), "no token or extra-usage line");
@@ -1270,7 +1285,7 @@ test("each limit row shows its own reset, and a reset that has passed shows none
 test("worst-case fixture renders in every family without errors", async () => {
   for (const family of FAMILIES) {
     const s = await render({ family, files: { [FILE]: WORST_TEXT } });
-    const title = family === "large" ? "ขีดจำกัดการใช้งาน AI" : "การใช้งาน AI";
+    const title = "Quota Battery";
     assert.ok(textValues(homeWidget(s)).includes(title), `${family}: title missing`);
   }
 });
@@ -1325,13 +1340,13 @@ test("app run presents a medium preview and sets no home-screen widget", async (
   assert.equal(s.setWidgets.length, 0);
   assert.equal(s.made.length, 1);
   assert.equal(s.made[0].presented, "medium");
-  assert.ok(textValues(s.made[0]).includes("การใช้งาน AI"));
+  assert.ok(textValues(s.made[0]).includes("Quota Battery"));
 });
 
 test("an unknown widget family falls back to the medium layout", async () => {
   const t = textValues(homeWidget(await render({ family: "extraLarge" })));
-  assert.ok(t.includes("การใช้งาน AI"));
-  assert.ok(!t.includes("ขีดจำกัดการใช้งาน AI"));
+  assert.ok(t.includes("Quota Battery"));
+  assert.ok(t.includes("อัปเดต 8 นาทีก่อน"));
 });
 
 // Language ------------------------------------------------------------------------------------
@@ -1390,11 +1405,11 @@ test("any other Parameter is ignored, and so is a Parameter that is not text", a
 
 test("the Parameter changes what is shown, not only the language value", async () => {
   const forcedEn = textValues(homeWidget(await render({ family: "medium", parameter: "en", deviceLanguage: "th-TH" })));
-  assert.ok(forcedEn.includes("AI Usage"));
-  assert.ok(!forcedEn.includes("การใช้งาน AI"));
+  assert.ok(forcedEn.includes("Updated 8 min ago"));
+  assert.ok(!forcedEn.includes("อัปเดต 8 นาทีก่อน"));
   const forcedTh = textValues(homeWidget(await render({ family: "medium", parameter: "th", deviceLanguage: "en-US" })));
-  assert.ok(forcedTh.includes("การใช้งาน AI"));
-  assert.ok(!forcedTh.includes("AI Usage"));
+  assert.ok(forcedTh.includes("อัปเดต 8 นาทีก่อน"));
+  assert.ok(!forcedTh.includes("Updated 8 min ago"));
 });
 
 test("the no-data and failure messages follow the language, even when the device language cannot be read", async () => {
@@ -1414,18 +1429,18 @@ test("the no-data and failure messages follow the language, even when the device
 test("English widgets: headers, footers, the almost-out count, and the reset and update texts", async () => {
   const v2 = { [FILE]: V2_TEXT };
   const small = textValues(homeWidget(await render({ family: "small", files: v2, deviceLanguage: "en" })));
-  for (const v of ["AI Usage", "8 min ago", "Claude", "ChatGPT", "agy", "System status", "1 almost out"]) {
+  for (const v of ["Quota Battery", "8 min ago", "Claude", "ChatGPT", "agy", "System status", "1 almost out"]) {
     assert.ok(small.includes(v), `small is missing "${v}"`);
   }
   const medium = textValues(homeWidget(await render({ family: "medium", files: v2, deviceLanguage: "en" })));
-  for (const v of ["AI Usage", "Updated 8 min ago", "Claude", "ChatGPT", "agy", "Week (Resets in 5 d)", "Week (Resets in 22 h)", "Claude (Resets in 5 h)"]) {
+  for (const v of ["Quota Battery", "Updated 8 min ago", "Claude", "ChatGPT", "agy", "Week (Resets in 5 d)", "Week (Resets in 22 h)", "Claude (Resets in 5 h)"]) {
     assert.ok(medium.includes(v), `medium is missing "${v}"`);
   }
   assert.deepEqual(medium.filter((v) => v.endsWith("% left")), ["33% left", "7% left", "100% left"]);
   assert.deepEqual(medium.filter((v) => v.endsWith("% used")), ["67% used", "93% used", "0% used"]);
   const large = textValues(homeWidget(await render({ family: "large", files: v2, deviceLanguage: "en" })));
   for (const v of [
-    "AI Usage Limits", "Live status", "Updated 8 min ago", "Claude · 5h", "Claude · Week", "ChatGPT · Week",
+    "Quota Battery", "Live status", "Updated 8 min ago", "Claude · 5h", "Claude · Week", "ChatGPT · Week",
     "agy · Claude", "agy · Gemini Pro", "Resets in 2 h", "Resets in 5 d", "Resets in 22 h · Credits 0", "Resets in 5 h",
   ]) {
     assert.ok(large.includes(v), `large is missing "${v}"`);
@@ -1828,7 +1843,7 @@ test("several accounts: the eight-account and eight-error widgets fit the smalle
       for (const family of FAMILIES) {
         const w = homeWidget(await render({ family, files: { [FILE]: text }, deviceLanguage }));
         assertFits(w, MIN_FRAME[family], `${name}/${deviceLanguage}/${family} smallest`, { shrink: true });
-        assertFits(w, MAX_FRAME[family], `${name}/${deviceLanguage}/${family} largest`, { shrink: false });
+        assertFitsExceptKnown(w, MAX_FRAME[family], `${name}/${deviceLanguage}/${family} largest`);
       }
     }
   }
@@ -1936,8 +1951,17 @@ test("more accounts: the badge layouts fit the smallest and largest frames (esti
       for (const family of ["small", "medium"]) {
         const w = homeWidget(await render({ family, files: { [FILE]: usageFile(accounts) }, deviceLanguage }));
         assertFits(w, MIN_FRAME[family], `${name}/${deviceLanguage}/${family} smallest`, { shrink: true });
-        assertFits(w, MAX_FRAME[family], `${name}/${deviceLanguage}/${family} largest`, { shrink: false });
+        assertFitsExceptKnown(w, MAX_FRAME[family], `${name}/${deviceLanguage}/${family} largest`);
       }
+    }
+  }
+});
+
+test("the header reads Quota Battery in Thai and in English, in every family", async () => {
+  for (const deviceLanguage of ["th-TH", "en-US"]) {
+    for (const family of FAMILIES) {
+      const t = textValues(homeWidget(await render({ family, deviceLanguage })));
+      assert.ok(t.includes("Quota Battery"), `${family} on ${deviceLanguage}: header is not "Quota Battery"`);
     }
   }
 });

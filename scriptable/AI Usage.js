@@ -1,4 +1,4 @@
-// AI Usage widget for iPhone (Scriptable).
+// Quota Battery widget for iPhone (Scriptable).
 // Reads ai-usage.json from the Scriptable folder in iCloud Drive. The Mac collector writes it.
 // Data contract: docs/usage-json.md (schema 1).
 // Language: Thai when the device language starts with "th", English otherwise. The widget's
@@ -20,8 +20,8 @@ const PROVIDERS = {
 // wording choices.
 const TEXT = {
   th: {
-    usageTitle: "การใช้งาน AI",
-    limitsTitle: "ขีดจำกัดการใช้งาน AI",
+    usageTitle: "Quota Battery",
+    limitsTitle: "Quota Battery",
     liveStatus: "สถานะเรียลไทม์",
     systemStatus: "สถานะระบบ",
     almostOut: "ใกล้หมด",
@@ -70,8 +70,8 @@ const TEXT = {
     },
   },
   en: {
-    usageTitle: "AI Usage",
-    limitsTitle: "AI Usage Limits",
+    usageTitle: "Quota Battery",
+    limitsTitle: "Quota Battery",
     liveStatus: "Live status",
     systemStatus: "System status",
     almostOut: "Almost out",

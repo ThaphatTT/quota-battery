@@ -229,8 +229,8 @@ The Mac app writes `sort` and `accounts`, and each write changes only its own ke
   happened while it was off. A higher threshold reached later still alerts.
 - The collector's `--no-notify` option has the same effect as `notify` set to `false`.
 - Examples of the notification text for Claude's 5-hour limit at 85%:
-  - `th`: title "การใช้งาน AI", text "Claude · 5 ชม. ใช้ไปแล้ว 85%"
-  - `en`: title "AI Usage", text "Claude · 5h used 85%"
+  - `th`: title "Quota Battery", text "Claude · 5 ชม. ใช้ไปแล้ว 85%"
+  - `en`: title "Quota Battery", text "Claude · 5h used 85%"
 
 ## known-accounts.json
 

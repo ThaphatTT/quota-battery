@@ -251,7 +251,7 @@ enum ContactSheet {
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>AI Usage snapshot matrix</title>
+        <title>Quota Battery snapshot matrix</title>
         <style>
         body { font: 13px -apple-system, system-ui, sans-serif; margin: 16px; background: #f4f4f5; color: #1c1c1e; }
         h1 { font-size: 18px; } h2 { font-size: 15px; margin: 28px 0 8px; }
@@ -262,7 +262,7 @@ enum ContactSheet {
         </style>
         </head>
         <body>
-        <h1>AI Usage snapshot matrix (\(entries.count) images)</h1>
+        <h1>Quota Battery snapshot matrix (\(entries.count) images)</h1>
         <p>Each image is a widget at its frame. Labels: size and frame, language, appearance, accounts, tier, state. "na" means the dimension cannot show for that case.</p>
         \(sections.joined(separator: "\n"))
         </body>

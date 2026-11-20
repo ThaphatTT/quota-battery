@@ -126,7 +126,7 @@ enum L10n {
     static func text(_ key: L10nKey, _ language: UILanguage) -> String {
         switch key {
         case .usageTitle:
-            return pick("การใช้งาน AI", "AI Usage", language)
+            return "Quota Battery"
         case .appName:
             return "Quota Battery"
         case .refresh:

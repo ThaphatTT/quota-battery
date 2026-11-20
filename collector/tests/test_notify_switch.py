@@ -91,7 +91,7 @@ class NotifySwitchTests(NotifyPassBase):
     def test_a_higher_threshold_after_the_switch_is_back_on_still_alerts(self):
         self.run_pass(85.0, send=False)
         self.assertEqual(self.run_pass(96.0, send=True),
-                         [("AI Usage", "Claude · 5h near limit, 96% used")])
+                         [("Quota Battery", "Claude · 5h near limit, 96% used")])
 
     def test_switch_off_still_prunes_old_state(self):
         old = {CLAUDE_KEY: {"sent": [80], "seen": "2026-10-01T00:00:00Z"}}
@@ -145,17 +145,26 @@ class LanguageTests(NotifyPassBase):
         acc = account(85.0)
         limit = acc["limits"][0]
         self.assertEqual(m.notification_text("th", acc, limit, 80, 85.0),
-                         ("การใช้งาน AI", "Claude · 5 ชม. ใช้ไปแล้ว 85%"))
+                         ("Quota Battery", "Claude · 5 ชม. ใช้ไปแล้ว 85%"))
         self.assertEqual(m.notification_text("th", acc, limit, 95, 96.0),
-                         ("การใช้งาน AI", "Claude · 5 ชม. ใกล้เต็มแล้ว 96%"))
+                         ("Quota Battery", "Claude · 5 ชม. ใกล้เต็มแล้ว 96%"))
 
     def test_english_alert_text_for_both_thresholds(self):
         acc = account(85.0)
         limit = acc["limits"][0]
         self.assertEqual(m.notification_text("en", acc, limit, 80, 85.0),
-                         ("AI Usage", "Claude · 5h used 85%"))
+                         ("Quota Battery", "Claude · 5h used 85%"))
         self.assertEqual(m.notification_text("en", acc, limit, 95, 96.0),
-                         ("AI Usage", "Claude · 5h near limit, 96% used"))
+                         ("Quota Battery", "Claude · 5h near limit, 96% used"))
+
+    def test_notification_title_is_quota_battery_in_both_languages_at_both_thresholds(self):
+        acc = account(85.0)
+        limit = acc["limits"][0]
+        for language in ("en", "th"):
+            for threshold, used in ((80, 85.0), (95, 96.0)):
+                with self.subTest(language=language, threshold=threshold):
+                    title, _ = m.notification_text(language, acc, limit, threshold, used)
+                    self.assertEqual(title, "Quota Battery")
 
     def test_english_limit_labels_follow_window_seconds_and_key(self):
         cases = [
@@ -181,7 +190,7 @@ class LanguageTests(NotifyPassBase):
 
     def test_notify_pass_sends_the_thai_title_and_text_when_language_is_th(self):
         self.assertEqual(self.run_pass(85.0, language="th"),
-                         [("การใช้งาน AI", "Claude · 5 ชม. ใช้ไปแล้ว 85%")])
+                         [("Quota Battery", "Claude · 5 ชม. ใช้ไปแล้ว 85%")])
 
 
 class MainNotifyTests(Base):
@@ -255,18 +264,18 @@ class MainNotifyTests(Base):
         self.write_settings({"notify": True, "language": "en"})
         self.set_five_hour(85.0)
         m.main(["--no-refresh"])
-        self.assertEqual(self.notes, [("AI Usage", "Claude · 5h used 85%")])
+        self.assertEqual(self.notes, [("Quota Battery", "Claude · 5h used 85%")])
 
     def test_the_app_language_setting_selects_the_thai_text_end_to_end(self):
         self.write_settings({"notify": True, "language": "th"})
         self.set_five_hour(85.0)
         m.main(["--no-refresh"])
-        self.assertEqual(self.notes, [("การใช้งาน AI", "Claude · 5 ชม. ใช้ไปแล้ว 85%")])
+        self.assertEqual(self.notes, [("Quota Battery", "Claude · 5 ชม. ใช้ไปแล้ว 85%")])
 
     def test_a_missing_settings_file_keeps_notifications_on(self):
         self.set_five_hour(85.0)
         m.main(["--no-refresh"])
-        self.assertEqual(self.notes, [("AI Usage", "Claude · 5h used 85%")])
+        self.assertEqual(self.notes, [("Quota Battery", "Claude · 5h used 85%")])
 
 
 if __name__ == "__main__":

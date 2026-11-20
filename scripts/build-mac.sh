@@ -146,7 +146,7 @@ main() {
             echo "เปิดแอป AIUsage อีกครั้ง"
             open "$dest" || echo "เปิดแอป AIUsage ไม่สำเร็จ เปิดเองได้จาก $dest" >&2
         fi
-        echo "เปิดแอป AIUsage หนึ่งครั้ง แล้วเพิ่มวิดเจ็ต AI Usage จากหน้าวิดเจ็ตของ macOS"
+        echo "เปิดแอป AIUsage หนึ่งครั้ง แล้วเพิ่มวิดเจ็ต Quota Battery จากหน้าวิดเจ็ตของ macOS"
     else
         echo "สร้างแล้วที่ $dest (ยังไม่ได้ติดตั้ง)"
     fi

@@ -203,7 +203,7 @@ Verify: `test -d "$HOME/Applications/AIUsage.app"`.
 ## Step 5: add the widget (manual)
 
 Ask the user to add it, because adding a widget is done in the macOS interface. In Finder or on the
-desktop, open the widget editor (right-click the desktop, then Edit Widgets). Search for **AI Usage** (on a Mac whose system language is Thai, search for **การใช้งาน AI** instead),
+desktop, open the widget editor (right-click the desktop, then Edit Widgets). Search for **Quota Battery** (the same name in Thai and English),
 choose a size, and add it.
 
 ## Step 6: iPhone widget, optional (ASK FIRST for the iCloud copy)
@@ -351,14 +351,13 @@ certificate. Then check that `mac/Local.xcconfig` holds the real id, not `YOURTE
 `mac/project.yml` or into any committed file.
 
 **The widget is not in the gallery.** The widget is listed only after the app has been opened once. The gallery
-name follows the Mac's system language: "AI Usage" in English, "การใช้งาน AI" in Thai. It does not follow the
-app's Language setting.
+name is "Quota Battery" in both languages, so the Mac system language does not change it.
 
 **The menu bar icon is missing.** Check that "Show menu bar icon" is on in the app window. The app has no
 open-at-login setting, so after a restart the user must open AIUsage again. The collector runs without it.
 If the user uses Hidden Bar: on macOS 27, Hidden Bar older than 1.11.2 hides every third-party icon, so it
 must be updated (tested with 1.13.1). With 1.13.1, a relaunched app's icon goes into the hidden section. The
-user sets AI Usage to **Visible** in Hidden Bar > Settings > Icons (Pinned sections).
+user sets **Quota Battery** to **Visible** in Hidden Bar > Settings > Icons (Pinned sections).
 
 **There are no notifications.** The 80% and 95% alerts come from the background collector, sent through
 `osascript`. macOS shows them as from Script Editor or osascript, and may ask to allow notifications. Check the

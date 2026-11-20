@@ -12,6 +12,14 @@ final class L10nTests: XCTestCase {
         }
     }
 
+    /// The header and the window name are "Quota Battery" in both languages, the same as the iPhone widget header.
+    func testHeaderIsQuotaBatteryInThaiAndEnglish() {
+        XCTAssertEqual(L10n.text(.usageTitle, .th), "Quota Battery")
+        XCTAssertEqual(L10n.text(.usageTitle, .en), "Quota Battery")
+        XCTAssertEqual(L10n.text(.widgetName, .th), "Quota Battery")
+        XCTAssertEqual(L10n.text(.widgetName, .en), "Quota Battery")
+    }
+
     /// These wordings are the iPhone widget's (scriptable/AI Usage.js), so both devices read the same.
     func testSharedWordingMatchesTheIPhoneWidget() {
         XCTAssertEqual(L10n.text(.almostOut, .th), "ใกล้หมด")

@@ -8,10 +8,15 @@ struct MenuBarPopoverView: View {
     let onQuit: () -> Void
 
     @State private var revealed: Bool
+    /// How the rows enter. Nil until the rows are first shown; then `slide` the first time the popover opens in the app
+    /// session, and `none` after that, so a later opening draws at once.
+    @State private var intro: IntroStyle?
     @State private var hovered: Int?
     @State private var quitHovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.uiLanguage) private var language
+
+    private var motion: MotionLevel { MotionLevel.resolve(reduceMotion: reduceMotion, snapshot: startsRevealed) }
 
     /// Snapshots start with every row shown and one row hovered. The live popover fades the rows in when it opens.
     init(
@@ -27,8 +32,13 @@ struct MenuBarPopoverView: View {
         self.onOpenApp = onOpenApp
         self.onQuit = onQuit
         _revealed = State(initialValue: startsRevealed)
+        _intro = State(initialValue: startsRevealed ? IntroStyle.none : nil)
         _hovered = State(initialValue: startsHovered)
+        self.startsRevealed = startsRevealed
     }
+
+    /// Set by a snapshot (the rows start shown). A snapshot draws still motion and no first-open motion.
+    private let startsRevealed: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,12 +64,22 @@ struct MenuBarPopoverView: View {
             quitRow
         }
         .frame(width: 300)
-        .onAppear { revealed = true }
+        .environment(\.motionLevel, motion)
+        .onAppear { decideIntro() }
+        .onChange(of: state.isLoaded) { _, _ in decideIntro() }
+    }
+
+    /// Shows the rows once the first read has finished. The first opening of the popover in the app session plays the
+    /// first-open motion; later openings show the rows at once.
+    private func decideIntro() {
+        guard state.isLoaded, intro == nil else { return }
+        intro = IntroStyle.resolve(isFirst: FirstOpenTracker.shared.claim("popover"), reduceMotion: reduceMotion, snapshot: false)
+        revealed = true
     }
 
     private var header: some View {
         HStack {
-            Text(L10n.text(.appName, language))
+            typedText(L10n.text(.appName, language), key: "popover.title", motion: motion)
                 .font(.system(size: 13, weight: .semibold))
             Spacer()
             RefreshButton(isRefreshing: state.isRefreshing, action: onRefresh)
@@ -70,7 +90,15 @@ struct MenuBarPopoverView: View {
 
     @ViewBuilder
     private var rows: some View {
-        if state.accounts.isEmpty {
+        if !state.isLoaded {
+            SkeletonLoadingView(label: L10n.text(.loading, language), motion: motion) {
+                VStack(spacing: 2) {
+                    ForEach(0..<2, id: \.self) { _ in
+                        SkeletonPopoverRow()
+                    }
+                }
+            }
+        } else if state.accounts.isEmpty {
             AppNoDataView()
                 .frame(maxWidth: .infinity, minHeight: 120)
         } else {
@@ -82,7 +110,8 @@ struct MenuBarPopoverView: View {
                         index: index,
                         revealed: revealed,
                         isHovered: hovered == index,
-                        reduceMotion: reduceMotion
+                        reduceMotion: reduceMotion,
+                        intro: intro ?? .none
                     )
                     .onHover { inside in
                         withAnimation(.easeOut(duration: 0.12)) {
@@ -104,7 +133,7 @@ struct MenuBarPopoverView: View {
         // A refresh message (progress or failure) replaces the update time. Otherwise the update time stays,
         // even when an account is stale: that account's error text is already on its row.
         let showsMessage = state.isRefreshing || state.notice != nil
-        let text = showsMessage ? line.text : (updated ?? line.text)
+        let text = !state.isLoaded ? L10n.text(.loading, language) : (showsMessage ? line.text : (updated ?? line.text))
         let isFailure = state.notice != nil && !state.isRefreshing
         return HStack(spacing: 8) {
             Circle()
@@ -170,6 +199,9 @@ struct PopoverAccountRow: View {
     let revealed: Bool
     let isHovered: Bool
     let reduceMotion: Bool
+    /// How the row enters: `slide` on the popover's first opening in the app session, `none` after that.
+    var intro: IntroStyle = .none
+    @Environment(\.motionLevel) private var motion
     @Environment(\.uiLanguage) private var language
     @Environment(\.colorScheme) private var colorScheme
 
@@ -179,14 +211,16 @@ struct PopoverAccountRow: View {
         let tier = UsageFormat.tier(percent)
         let subline = AppUsageInsights.popoverSubline(account, now: now, language: language)
         HStack(alignment: .center, spacing: 9) {
-            LocalBrandIcon(
-                letter: AppUsageInsights.brandLetter(for: account),
+            slotBrand(
+                AppUsageInsights.brandLetter(for: account),
                 color: LocalPalette.brand(for: account.provider),
-                size: 28
+                size: 28,
+                key: "popover.brand." + account.id,
+                motion: motion
             )
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(AppUsageInsights.displayName(account))
+                    typedText(AppUsageInsights.displayName(account), key: "popover.name." + account.id, motion: motion)
                         .font(.system(size: 13, weight: .semibold))
                         .lineLimit(1)
                         // The name keeps its room before the caption and the pill, so it is never cut to "…".
@@ -208,14 +242,20 @@ struct PopoverAccountRow: View {
                     Text(subline.text)
                         .font(.system(size: 10.5))
                         .foregroundStyle(subline.isError ? LocalPalette.warning : (isHovered ? Color.primary.opacity(0.8) : Color.secondary))
-                        .lineLimit(2)
+                        .lineLimit(subline.showsAllLines ? nil : 2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 6)
             HStack(spacing: 6) {
                 VStack(alignment: .trailing, spacing: 0) {
-                    Text(UsageFormat.leftText(percent, language))
+                    rollingText(
+                        number: UsageFormat.leftWhole(percent).map(Double.init),
+                        text: UsageFormat.leftText(percent, language),
+                        format: { L10n.percentLeft(Int($0.rounded()), language) },
+                        key: "popover.left." + account.id,
+                        motion: motion
+                    )
                         .font(.system(size: 13, weight: .semibold))
                         .monospacedDigit()
                         .foregroundStyle(tier.color(colorScheme))
@@ -229,7 +269,11 @@ struct PopoverAccountRow: View {
                     }
                 }
                 .frame(minWidth: 54, alignment: .trailing)
-                LocalBatteryGauge(usedPercent: percent)
+                LocalBatteryGauge(
+                    usedPercent: percent,
+                    growKey: "popover." + account.id,
+                    growDelay: 0.12 + Double(index) * 0.06
+                )
             }
         }
         .padding(.horizontal, 8)
@@ -243,8 +287,8 @@ struct PopoverAccountRow: View {
                 .stroke(Color.primary.opacity(isHovered ? 0.15 : 0), lineWidth: 0.5)
         )
         .opacity(revealed ? 1 : 0)
-        .offset(y: revealed || reduceMotion ? 0 : 6)
-        .animation(LocalMotion.rowReveal(index: index, reduced: reduceMotion), value: revealed)
+        .offset(y: revealed || intro != .slide ? 0 : 8)
+        .animation(intro == .none ? nil : LocalMotion.rowReveal(index: index, reduced: intro == .fade), value: revealed)
         .modifier(AlertPulse(isAlert: alert))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spokenLabel)

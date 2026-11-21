@@ -159,6 +159,7 @@ final class L10nTests: XCTestCase {
             ("network", "เชื่อมต่อเครือข่ายไม่ได้", "No network connection"),
             ("rate_limited", "ถูกจำกัดการเรียกชั่วคราว", "Rate limited for now"),
             ("server_error", "เซิร์ฟเวอร์มีปัญหา", "Server error"),
+            ("quota_unavailable", "ยังไม่มีข้อมูลโควตา", "Quota data unavailable"),
             ("unknown", "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ", "Unknown error"),
         ]
         for item in expected {
@@ -194,6 +195,12 @@ final class L10nTests: XCTestCase {
     func testUnknownCodeWithoutFileTextShowsItsWording() {
         XCTAssertEqual(L10n.errorMessage(code: "unknown", fallback: nil, .th), "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ")
         XCTAssertEqual(L10n.errorMessage(code: "unknown", fallback: "", .en), "Unknown error")
+    }
+
+    func testOldClaudeNoQuotaMessageRetainsItsMeaning() {
+        let file = "ไม่พบข้อมูลโควตา Claude"
+        XCTAssertEqual(L10n.errorMessage(code: "unknown", fallback: file, .th), "ยังไม่มีข้อมูลโควตา")
+        XCTAssertEqual(L10n.errorMessage(code: "unknown", fallback: file, .en), "Quota data unavailable")
     }
 
     func testMissingCodeKeepsTheFileTextAndNoTextMeansNil() {

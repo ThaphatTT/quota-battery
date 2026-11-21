@@ -27,7 +27,7 @@ struct AIUsageApp: App {
 /// Closing the window keeps the app running.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let model = UsageViewModel()
+    let model = UsageViewModel(deferFirstRead: true)
     /// The "Open at login" switch of the Settings window. It is the system's login item, not a settings.json key.
     let openAtLogin = OpenAtLoginModel(service: MainAppLoginItem())
 
@@ -35,9 +35,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var openMainWindowAction: (() -> Void)?
 
     private var statusItemController: StatusItemController?
+    private var claudeHeaderRing: ClaudeHeaderRing?
+    private var codexUsageRing: CodexUsageRingController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItemController = StatusItemController(model: model) { [weak self] in
+            self?.showMainWindow()
+        }
+        claudeHeaderRing = ClaudeHeaderRing(model: model) { [weak self] in
+            self?.showMainWindow()
+        }
+        codexUsageRing = CodexUsageRingController(model: model) { [weak self] in
             self?.showMainWindow()
         }
     }

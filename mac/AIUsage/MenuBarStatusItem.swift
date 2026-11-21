@@ -46,8 +46,13 @@ final class MenuBarStatusItem: ObservableObject {
     private var shown: Double?
     private var pulseStart: Date?
     private var timer: Timer?
+    /// The glide of the number and the ring: a liquid spring (fraction of the used percent). Nil when nothing moves.
+    private var spring: LiquidSpring?
+    /// True once the first value has been shown. The first value grows the ring from empty, once per app session.
+    private var hasGrown = false
 
-    private static let glideTime: Double = 0.14
+    /// The first value grows in after this delay, so the menu bar has settled when it starts.
+    private static let growDelay: TimeInterval = 0.15
     private static let pulseLength: TimeInterval = 0.9
     private static let frameTime: TimeInterval = 1.0 / 60.0
     /// Posted by the system when the light or dark appearance changes. The yellow and red of the icon change with it.
@@ -82,12 +87,22 @@ final class MenuBarStatusItem: ObservableObject {
             pulseStart = Date()
         }
         target = percent
-        // Jump when there is nothing to glide from or to, or when Reduce Motion is on.
-        if percent == nil || shown == nil || reduced {
+        spring = nil
+        if percent == nil || reduced {
+            shown = percent
+        } else if !hasGrown {
+            // The first value grows the ring in from empty, once per app session.
+            hasGrown = true
+            spring = LiquidSpring(position: 0, target: percent.map { $0 / 100 } ?? 0, startAt: Date().addingTimeInterval(Self.growDelay))
+            shown = 0
+        } else if let current = shown {
+            // A value change: the ring and the number move on a liquid spring from the value on screen.
+            spring = LiquidSpring(position: current / 100, target: (percent ?? 0) / 100)
+        } else {
             shown = percent
         }
         redraw()
-        if shown != target || pulseStart != nil {
+        if shown != target || pulseStart != nil || spring != nil {
             startTimer()
         }
     }
@@ -102,10 +117,14 @@ final class MenuBarStatusItem: ObservableObject {
     }
 
     private func step() {
-        if let current = shown, let goal = target {
-            let factor = 1 - exp(-Self.frameTime / Self.glideTime)
-            let next = current + (goal - current) * factor
-            shown = abs(goal - next) < 0.05 ? goal : next
+        if let spring, let goal = target {
+            spring.advance(to: Date())
+            if spring.isSettled {
+                shown = goal
+                self.spring = nil
+            } else {
+                shown = min(max(spring.position, 0), 1) * 100
+            }
         } else {
             shown = target
         }

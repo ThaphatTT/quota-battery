@@ -30,6 +30,8 @@ final class PerformanceTests: XCTestCase {
     /// is smaller, so the budget is raised from 0.25 to 0.5. A card that doubles still fails (see the test matrix).
     private static let cardToReferenceBudget: Double = 6.0
     private static let cardToWindowBudget: Double = 0.5
+    /// The skeleton window against the reference view. Measured 0.60 to 1.14 (median about 0.9) on the test machine. Doubling the skeleton measures about 1.6 (see the positive control), so this budget sits between the two.
+    private static let skeletonRatioBudget: Double = 1.4
     /// Polls of unchanged files may publish at most this many changes in all (the minute may roll over once).
     private static let idlePublishBudget = 1
 
@@ -206,6 +208,59 @@ final class PerformanceTests: XCTestCase {
         XCTAssertLessThan(
             rounds.median, Self.windowTwoColumnRatioBudget,
             "one full window draw at two columns takes \(String(format: "%.2f", rounds.median)) times the reference view (median of 5 rounds, ratios \(rounds.ratiosText); \(rounds.detailText)), budget \(Self.windowTwoColumnRatioBudget)"
+        )
+    }
+
+    /// The skeleton window (two grey cards, before the first read has finished) against the same reference view. It is
+    /// the first thing the window draws, so it must not cost more than the loaded window.
+    func testSkeletonWindowRendersWithinOneFrame() throws {
+        let loading = AppUsageState(result: .missing, now: Fixtures.now, isRefreshing: false, notice: nil, isLoaded: false)
+        let view = ContentView(
+            state: loading,
+            modelMixActions: ModelMixActions(),
+            onRefresh: {},
+            onOpenSettings: {},
+            onOpenLogs: {},
+            snapshot: true
+        )
+        .frame(width: CardGridLayout.minimumWindowWidth, height: 900)
+        .environment(\.uiLanguage, .th)
+        .environment(\.colorScheme, .light)
+        let rounds = ratioRounds(
+            subjectIterations: 6, subject: { _ = render(view) },
+            referenceIterations: 6, reference: { _ = render(ReferenceRows()) }
+        )
+        print("PERF skeleton-window-render ratio_to_reference=\(rounds.median) rounds: \(rounds.detailText) ratios \(rounds.ratiosText)")
+        XCTAssertLessThan(
+            rounds.median, Self.skeletonRatioBudget,
+            "the skeleton window takes \(String(format: "%.2f", rounds.median)) times the reference view (median of 5 rounds, ratios \(rounds.ratiosText); \(rounds.detailText)), budget \(Self.skeletonRatioBudget)"
+        )
+    }
+
+    /// Positive control for the skeleton gate: two skeleton windows stacked (twice the work) must be over the budget. If
+    /// they are not, the gate cannot tell a doubled skeleton from a normal one.
+    func testDoublingTheSkeletonFailsTheGate() throws {
+        let loading = AppUsageState(result: .missing, now: Fixtures.now, isRefreshing: false, notice: nil, isLoaded: false)
+        let one = ContentView(
+            state: loading,
+            modelMixActions: ModelMixActions(),
+            onRefresh: {},
+            onOpenSettings: {},
+            onOpenLogs: {},
+            snapshot: true
+        )
+        .frame(width: CardGridLayout.minimumWindowWidth, height: 900)
+        .environment(\.uiLanguage, .th)
+        .environment(\.colorScheme, .light)
+        let doubled = VStack(spacing: 0) { one; one }
+        let rounds = ratioRounds(
+            subjectIterations: 6, subject: { _ = render(doubled) },
+            referenceIterations: 6, reference: { _ = render(ReferenceRows()) }
+        )
+        print("PERF skeleton-window-doubled ratio_to_reference=\(rounds.median) rounds: \(rounds.detailText) ratios \(rounds.ratiosText)")
+        XCTAssertGreaterThan(
+            rounds.median, Self.skeletonRatioBudget,
+            "positive control: a doubled skeleton must fail the gate, but it measured \(String(format: "%.2f", rounds.median)) against budget \(Self.skeletonRatioBudget)"
         )
     }
 

@@ -268,6 +268,50 @@ enum UsageFormat {
 
 /// One limit row of a widget, or the single row of an account with no limits (`hasUsage` false).
 /// The large and medium layouts each fill `title`, `subtitle` and the flags in their own way.
+/// The agy display group of a limit: Gemini first, then add-ons (Claude and GPT on their own quota), then other.
+/// A limit with an unknown group name counts as other. A limit with no group field is not grouped at all.
+enum LimitGroup: Equatable, CaseIterable {
+    case gemini, addon, other
+
+    /// The order the groups are shown in.
+    var rank: Int {
+        switch self {
+        case .gemini: return 0
+        case .addon: return 1
+        case .other: return 2
+        }
+    }
+
+    /// Nil for a limit with no group field (an old file, or another provider).
+    static func parse(_ raw: String?) -> LimitGroup? {
+        switch raw {
+        case nil: return nil
+        case "gemini": return .gemini
+        case "addon": return .addon
+        default: return .other
+        }
+    }
+
+    /// The header text of the group in the chosen language.
+    func title(_ language: UILanguage) -> String {
+        switch self {
+        case .gemini: return L10n.text(.agyGroupGemini, language)
+        case .addon: return L10n.text(.agyGroupAddons, language)
+        case .other: return L10n.text(.agyGroupOther, language)
+        }
+    }
+}
+
+/// One group of agy limits on the account card: its header, its tag, and the file indices of its limits in order.
+struct LimitSection: Equatable {
+    let group: LimitGroup
+    let title: String
+    /// "Separate quota" under the add-ons header, nil for the other groups.
+    let tag: String?
+    /// Indices into `UsageAccount.limits`, in display order.
+    let indices: [Int]
+}
+
 struct LimitRowModel: Equatable, Identifiable {
     let id: String
     let provider: String
@@ -305,6 +349,8 @@ struct LimitRowModel: Equatable, Identifiable {
     var subtitleIsError: Bool
     /// The pill ("ใกล้หมด" / "Almost out"). Set on every row that is yellow or red.
     var showsNearFull: Bool
+    /// The agy group of the row. Nil when the account's limits are not grouped (see `LimitSection`).
+    var group: LimitGroup? = nil
 
     /// What VoiceOver reads for the row: `accessibilityText`, plus the error text when the row carries one (the first row
     /// of a stale or error account). A row with no usage already reads its subtitle inside `accessibilityText`.
@@ -331,6 +377,8 @@ struct AccountCardModel: Equatable {
     let meta: String?
     /// The account's error text. Shown for stale and error accounts.
     let errorText: String?
+    /// The agy groups in display order, when the limits carry groups. Nil for a flat list. `rows` are in the same order.
+    var sections: [LimitSection]? = nil
 }
 
 struct SmallLineModel: Equatable {
@@ -355,6 +403,47 @@ enum UsagePresenter {
     /// The small widget has room for this many rings.
     static let smallRingLimit = 3
 
+    /// The indices of the account's limits in display order: Gemini, add-ons, other, each group in file order. Nil when
+    /// the limits are not grouped (an old file has no `group`, so the file order is kept and nothing is split).
+    static func groupedOrder(_ account: UsageAccount) -> [Int]? {
+        let groups = account.limits.map { LimitGroup.parse($0.group) }
+        guard !groups.isEmpty, groups.allSatisfy({ $0 != nil }) else { return nil }
+        return account.limits.indices.sorted { lhs, rhs in
+            let (a, b) = (groups[lhs]?.rank ?? 0, groups[rhs]?.rank ?? 0)
+            return a == b ? lhs < rhs : a < b
+        }
+    }
+
+    /// The groups of a grouped account, in display order, with their headers. Nil when the limits are not grouped.
+    static func sections(for account: UsageAccount, language: UILanguage) -> [LimitSection]? {
+        guard let order = groupedOrder(account) else { return nil }
+        var sections: [LimitSection] = []
+        for index in order {
+            guard let group = LimitGroup.parse(account.limits[index].group) else { continue }
+            if let last = sections.last, last.group == group {
+                sections[sections.count - 1] = LimitSection(group: group, title: last.title, tag: last.tag,
+                                                            indices: last.indices + [index])
+            } else {
+                let tag = group == .addon ? L10n.text(.agyGroupAddonsTag, language) : nil
+                sections.append(LimitSection(group: group, title: group.title(language), tag: tag, indices: [index]))
+            }
+        }
+        return sections
+    }
+
+    /// The short label of an agy limit in a popover line, for example "Models 5h" or "Argon Weekly". Other keys keep
+    /// the window label.
+    static func shortAgyLabel(_ limit: UsageLimit, language: UILanguage) -> String {
+        switch limit.key {
+        case "gemini-5h": return L10n.text(.agyShortModels5h, language)
+        case "gemini-weekly": return L10n.text(.agyShortModelsWeekly, language)
+        case "gemini-argon-wtu-weekly": return L10n.text(.agyShortArgonWeekly, language)
+        case "3p-5h": return L10n.text(.agyShortClaudeGpt5h, language)
+        case "3p-weekly": return L10n.text(.agyShortWeekly, language)
+        default: return UsageFormat.windowLabel(limit, language: language)
+        }
+    }
+
     static func cards(for document: UsageDocument, now: Date, language: UILanguage) -> [AccountCardModel] {
         document.accounts.enumerated().map { index, account in
             card(for: account, now: now, index: index, language: language)
@@ -378,7 +467,10 @@ enum UsagePresenter {
         }
 
         let credit = account.credits?.balanceUsd.map { L10n.credits(UsageFormat.creditText($0), language) }
-        let rows = account.limits.enumerated().map { limitIndex, limit -> LimitRowModel in
+        let grouped = sections(for: account, language: language)
+        let order = grouped?.flatMap(\.indices) ?? Array(account.limits.indices)
+        let rows = order.map { limitIndex -> LimitRowModel in
+            let limit = account.limits[limitIndex]
             let used: Double? = limit.usedPercent.isFinite ? limit.usedPercent : nil
             let label = UsageFormat.windowLabel(limit, language: language)
             let reset = UsageFormat.resetText(resetsAt: limit.resetsAt, now: now, language: language)
@@ -404,7 +496,8 @@ enum UsagePresenter {
                 title: "\(name) · \(label)",
                 subtitle: subtitle.isEmpty ? nil : subtitle,
                 subtitleIsError: false,
-                showsNearFull: false
+                showsNearFull: false,
+                group: grouped == nil ? nil : LimitGroup.parse(limit.group)
             )
         }
 
@@ -418,7 +511,8 @@ enum UsagePresenter {
             trailingIsTag: trailingIsTag,
             rows: rows,
             meta: metaLine(for: account, now: now, language: language),
-            errorText: error
+            errorText: error,
+            sections: grouped
         )
     }
 
@@ -479,10 +573,21 @@ enum UsagePresenter {
 
         let shown = candidates.indices.filter { keep.contains($0) }
         var rows = shown.map { candidates[$0] }
-        let owners = shown.map { accountOf[$0] }
+        let rowAccounts = shown.map { accountOf[$0] }
+
+        // A grouped agy account keeps Gemini before add-ons: its shown rows are reordered inside their own slots.
+        let grouped = rows.indices.filter { rows[$0].group != nil }
+        let groupedSorted = grouped.sorted { lhs, rhs in
+            let (a, b) = (rowAccounts[lhs], rowAccounts[rhs])
+            if a != b { return a < b }
+            let (x, y) = (rows[lhs].group?.rank ?? 0, rows[rhs].group?.rank ?? 0)
+            return x == y ? lhs < rhs : x < y
+        }
+        let reordered = groupedSorted.map { rows[$0] }
+        for (slot, row) in zip(grouped, reordered) { rows[slot] = row }
 
         for (accountIndex, card) in cards.enumerated() where !card.rows.isEmpty {
-            guard let error = card.errorText, let first = owners.firstIndex(of: accountIndex) else { continue }
+            guard let error = card.errorText, let first = rowAccounts.firstIndex(of: accountIndex) else { continue }
             rows[first].subtitle = error
             rows[first].subtitleIsError = true
         }
@@ -497,7 +602,9 @@ enum UsagePresenter {
     /// An account with no limits shows its name and its error text instead.
     static func mediumRows(for cards: [AccountCardModel], language: UILanguage) -> [LimitRowModel] {
         cards.prefix(mediumRowLimit).map { card -> LimitRowModel in
-            guard var row = highest(in: card.rows) else { return placeholderRow(for: card, language: language) }
+            // A grouped agy account shows its Gemini row first (its rows are in display order), not the most used one.
+            let shown = card.sections == nil ? highest(in: card.rows) : card.rows.first { $0.hasUsage }
+            guard var row = shown else { return placeholderRow(for: card, language: language) }
             let label = row.label
             let reset = row.resetText
             row.title = card.name
@@ -515,7 +622,7 @@ enum UsagePresenter {
         document.accounts.prefix(smallRingLimit).map { account in
             let label = account.label.trimmingCharacters(in: .whitespacesAndNewlines)
             let name = label.isEmpty ? ProviderStyle.shortName(for: account.provider) : label
-            let primary = account.limits.first
+            let primary = groupedOrder(account).map { account.limits[$0[0]] } ?? account.limits.first
             let used: Double? = primary.flatMap { $0.usedPercent.isFinite ? $0.usedPercent : nil }
             let window = primary.map { UsageFormat.windowLabel($0, language: language) }
             return SmallLineModel(

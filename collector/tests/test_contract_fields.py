@@ -94,8 +94,8 @@ class ErrorCodeTests(Base):
         self.assertEqual((acc["error_code"], acc["error"]), ("network", m.MSG_CLAUDE_TIMEOUT))
 
     def test_a_claude_that_cannot_be_read_at_all_is_unknown(self):
-        acc = self.claude([b"not json\n"], text=claude_text_lines(text="still not json"))
-        self.assertEqual((acc["error_code"], acc["error"]), ("unknown", m.MSG_CLAUDE_NO_QUOTA))
+        acc = self.claude([b"not json\n"], text=[b"still not json\n"])
+        self.assertEqual((acc["error_code"], acc["error"]), ("unknown", m.MSG_CLAUDE_FORMAT))
 
     def test_a_claude_that_is_not_logged_in_is_left_out_not_an_error(self):
         self.assertIsNone(self.claude(claude_stream_error_lines()))
@@ -103,8 +103,8 @@ class ErrorCodeTests(Base):
     def test_a_claude_that_rejects_the_request_is_unknown(self):
         reply = [json_line(control_response("init-1", {})), json_line(control_response(
             "usage-1", error="rate window opened elsewhere"))]
-        acc = self.claude(reply, text=claude_text_lines(text="no usage here"))
-        self.assertEqual((acc["error_code"], acc["error"]), ("unknown", m.MSG_CLAUDE_NO_QUOTA))
+        acc = self.claude(reply, text=claude_text_lines(text="no usage here", is_error=True))
+        self.assertEqual((acc["error_code"], acc["error"]), ("unknown", m.MSG_CLAUDE_REJECTED))
 
     def test_a_missing_claude_is_unknown(self):
         self.use_clis({})

@@ -95,9 +95,12 @@ struct UsageLimit: Equatable, Decodable {
     /// Required. A limit without a number is dropped by `Lossy`.
     var usedPercent: Double
     var resetsAt: Date?
+    /// The agy display group: "gemini", "addon" or "other". Nil in files written before the field existed, and for
+    /// every other provider. Readers then show the agy limits as one flat list.
+    var group: String?
 
     private enum CodingKeys: String, CodingKey {
-        case key, label
+        case key, label, group
         case windowSeconds = "window_seconds"
         case usedPercent = "used_percent"
         case resetsAt = "resets_at"
@@ -110,6 +113,7 @@ struct UsageLimit: Equatable, Decodable {
         windowSeconds = try? c.decodeIfPresent(Int.self, forKey: .windowSeconds)
         usedPercent = try c.decode(Double.self, forKey: .usedPercent)
         resetsAt = UsageDate.parse(try? c.decodeIfPresent(String.self, forKey: .resetsAt))
+        group = try? c.decodeIfPresent(String.self, forKey: .group)
     }
 }
 

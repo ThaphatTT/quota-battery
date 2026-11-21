@@ -1,3 +1,4 @@
+import ApplicationServices
 import SwiftUI
 
 /// The Settings window: four panes (General, Accounts, Notifications, Direct mode). It opens with ⌘, and from the gear
@@ -5,13 +6,15 @@ import SwiftUI
 /// and the same behaviour. Only the place has changed.
 struct AppSettingsView: View {
     @ObservedObject var model: UsageViewModel
+    /// The tab on screen: 0 General, 1 Accounts, 2 Notifications, 3 Direct mode.
+    @State private var tab = 0
     @ObservedObject var openAtLogin: OpenAtLoginModel
     @AppStorage(AppSettingKey.showMenuBarIcon) private var showMenuBarIcon = true
     @AppStorage(AppSettingKey.notifyAt80And95) private var notifyAt80And95 = true
 
     var body: some View {
         let language = model.uiLanguage
-        TabView {
+        TabView(selection: $tab) {
             ScrollView {
                 GeneralSettingsPane(
                     choice: model.languageChoice,
@@ -22,6 +25,7 @@ struct AppSettingsView: View {
                 .padding(20)
             }
             .tabItem { Label(L10n.text(.tabGeneral, language), systemImage: "gearshape") }
+            .tag(0)
 
             ScrollView {
                 AppAccountsSection(
@@ -34,17 +38,20 @@ struct AppSettingsView: View {
                         move: { model.moveAccount($0, onto: $1) },
                         setSort: { model.setAccountSort($0) },
                         setDirectMode: { model.setDirectMode($0, enabled: $1) }
-                    )
+                    ),
+                    isShowing: tab == 1
                 )
                 .padding(20)
             }
             .tabItem { Label(L10n.text(.tabAccounts, language), systemImage: "person.2") }
+            .tag(1)
 
             ScrollView {
                 NotificationsSettingsPane(notify: $notifyAt80And95)
                     .padding(20)
             }
             .tabItem { Label(L10n.text(.tabNotifications, language), systemImage: "bell") }
+            .tag(2)
 
             ScrollView {
                 DirectModeSettingsPane(
@@ -54,6 +61,7 @@ struct AppSettingsView: View {
                 .padding(20)
             }
             .tabItem { Label(L10n.text(.tabDirectMode, language), systemImage: "bolt.horizontal") }
+            .tag(3)
         }
         .environment(\.uiLanguage, language)
         .frame(width: 580, height: 520)
@@ -71,6 +79,9 @@ struct GeneralSettingsPane: View {
     @ObservedObject var openAtLogin: OpenAtLoginModel
     /// Set only by the snapshot tests: draws look-alikes of the native segmented control and switches.
     var snapshot: Bool = false
+    @AppStorage(AppSettingKey.showClaudeHeaderRing) private var showClaudeHeaderRing = false
+    @AppStorage(AppSettingKey.showCodexUsageRing) private var showCodexUsageRing = true
+    @State private var accessibilityGranted = AXIsProcessTrusted()
     @Environment(\.uiLanguage) private var language
 
     var body: some View {
@@ -82,6 +93,32 @@ struct GeneralSettingsPane: View {
                 Divider()
                 SettingsRow(title: L10n.text(.showMenuBarIcon, language)) {
                     switchControl(isOn: $showMenuBarIcon, title: L10n.text(.showMenuBarIcon, language), snapshotOn: showMenuBarIcon)
+                }
+                Divider()
+                SettingsRow(
+                    title: L10n.text(.showClaudeHeaderRing, language),
+                    hint: L10n.text(.claudeHeaderHint, language)
+                ) {
+                    switchControl(
+                        isOn: $showClaudeHeaderRing,
+                        title: L10n.text(.showClaudeHeaderRing, language),
+                        snapshotOn: showClaudeHeaderRing
+                    )
+                }
+                Divider()
+                SettingsRow(title: L10n.text(.showCodexUsageRing, language)) {
+                    switchControl(
+                        isOn: $showCodexUsageRing,
+                        title: L10n.text(.showCodexUsageRing, language),
+                        snapshotOn: showCodexUsageRing
+                    )
+                }
+                if !snapshot && (showClaudeHeaderRing || showCodexUsageRing) && !accessibilityGranted {
+                    Button(L10n.text(.claudeHeaderAccessibility, language)) {
+                        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+                        accessibilityGranted = AXIsProcessTrustedWithOptions(options as CFDictionary)
+                    }
+                    .controlSize(.small)
                 }
                 Divider()
                 SettingsRow(
@@ -109,6 +146,9 @@ struct GeneralSettingsPane: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            accessibilityGranted = AXIsProcessTrusted()
+        }
     }
 
     @ViewBuilder

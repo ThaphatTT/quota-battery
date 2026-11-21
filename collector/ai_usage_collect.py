@@ -89,6 +89,7 @@ MSG_CLAUDE_TIMEOUT = "Claude ตอบช้าเกินเวลา ลอ�
 MSG_CLAUDE_FORMAT = "ข้อมูลจาก Claude ผิดรูปแบบ อาจเป็นเพราะ Claude Code เปลี่ยนรุ่น"
 MSG_CLAUDE_REJECTED = "Claude ไม่ยอมส่งข้อมูลโควตา ลองใหม่รอบถัดไป"
 MSG_CLAUDE_NO_QUOTA = "ไม่พบข้อมูลโควตา Claude"
+MSG_CLAUDE_RATE_LIMITED = "Claude จำกัดการอ่านโควตาชั่วคราว ลองใหม่รอบถัดไป"
 MSG_CODEX_EXPIRED = "ล็อกอิน Codex หมดอายุ เปิด codex สักครั้ง"
 MSG_CODEX_RETRY = "เชื่อมต่อ ChatGPT ไม่ได้ ลองใหม่รอบถัดไป"
 MSG_CODEX_TIMEOUT = "Codex ตอบช้าเกินเวลา ลองใหม่รอบถัดไป"
@@ -116,6 +117,7 @@ ERROR_NOT_SET_UP = "not_set_up"  # agy has a login but no project yet
 ERROR_NETWORK = "network"  # the provider could not be reached (or its CLI did not answer in time)
 ERROR_RATE_LIMITED = "rate_limited"  # HTTP 429
 ERROR_SERVER = "server_error"  # HTTP 5xx
+ERROR_QUOTA_UNAVAILABLE = "quota_unavailable"  # the CLI replied without usage limits
 ERROR_UNKNOWN = "unknown"  # anything else
 
 
@@ -664,7 +666,7 @@ def parse_claude_usage(doc):
                        "resets_at": iso_or_none(window.get("resets_at")),
                        "window_seconds": window_seconds_for("claude", key)})
     if not limits:
-        raise FetchError(MSG_CLAUDE_NO_QUOTA, ERROR_UNKNOWN, detail="rate_limits has no usable window")
+        raise FetchError(MSG_CLAUDE_NO_QUOTA, ERROR_QUOTA_UNAVAILABLE, detail="rate_limits has no usable window")
     credits = None
     extra = doc.get("extra_usage")
     if isinstance(extra, dict):
@@ -708,8 +710,10 @@ RESET_TIME = re.compile(
     r"resets?\s+(?P<clock>\d{1,2}(?::\d{2})?\s*[ap]m|\d{1,2}:\d{2})(?:\s*\((?P<zone>[^)]+)\))?",
     re.IGNORECASE)
 USAGE_LINE = re.compile(
-    r"Current\s+(?P<name>session|week(?:\s*\((?P<model>[^)]*)\))?)\s*:\s*(?P<pct>\d+(?:\.\d+)?)\s*%\s*used"
-    r"(?P<rest>[^\n]*)", re.IGNORECASE)
+    r"^[ \t]*Current[ \t]+(?P<name>session|week)(?:[ \t]*\((?P<model>[^)\r\n]*)\))?"
+    r"[ \t]*:?[ \t]*(?:\r?\n[ \t]*)?(?P<pct>\d+(?:\.\d+)?)[ \t]*%[ \t]*used"
+    r"(?P<rest>[^\r\n]*(?:\r?\n[ \t]*resets?\b[^\r\n]*)?)", re.IGNORECASE | re.MULTILINE)
+CLAUDE_USAGE_RATE_LIMITED = re.compile(r"\brate_limit_error\b|\brate limited\. please try again later\b", re.IGNORECASE)
 
 
 def parse_clock(text: str):
@@ -850,7 +854,7 @@ def claude_stream_usage(env: Env, source, binary: str):
         raise FetchError(MSG_CLAUDE_FORMAT, ERROR_UNKNOWN, detail="get_usage: no response object")
     if payload.get("rate_limits_available") is False:
         # Not a silent drop: an error keeps the last good data (stale), and the stage is logged.
-        raise FetchError(MSG_CLAUDE_NO_QUOTA, ERROR_UNKNOWN,
+        raise FetchError(MSG_CLAUDE_NO_QUOTA, ERROR_QUOTA_UNAVAILABLE,
                          detail="get_usage: rate_limits_available is false")
     rate = payload.get("rate_limits")
     if not isinstance(rate, dict):
@@ -868,11 +872,15 @@ def claude_text_usage(env: Env, source, binary: str):
     text = doc.get("result")
     if not isinstance(text, str):
         raise FetchError(MSG_CLAUDE_FORMAT, ERROR_UNKNOWN, detail="/usage: result text missing")
-    limits = parse_claude_usage_text(text, env.now)
+    limits = [] if doc.get("is_error") is True else parse_claude_usage_text(text, env.now)
     if not limits:
         if LOGGED_OUT.search(text):
             raise NotLoggedIn("/usage: the CLI said not logged in")
-        raise FetchError(MSG_CLAUDE_NO_QUOTA, ERROR_UNKNOWN, detail="/usage: no session or week line")
+        if CLAUDE_USAGE_RATE_LIMITED.search(text):
+            raise FetchError(MSG_CLAUDE_RATE_LIMITED, ERROR_RATE_LIMITED, detail="/usage: rate limited")
+        if doc.get("is_error") is True:
+            raise FetchError(MSG_CLAUDE_REJECTED, ERROR_UNKNOWN, detail="/usage: the CLI returned an error")
+        raise FetchError(MSG_CLAUDE_NO_QUOTA, ERROR_QUOTA_UNAVAILABLE, detail="/usage: no session or week line")
     return {"plan": None, "limits": limits, "credits": None}
 
 
@@ -883,7 +891,7 @@ def fetch_claude(env: Env, source):
     try:
         return claude_stream_usage(env, source, binary)
     except FetchError as error:
-        if error.code not in (ERROR_UNKNOWN, ERROR_NETWORK):
+        if error.code not in (ERROR_UNKNOWN, ERROR_NETWORK, ERROR_QUOTA_UNAVAILABLE):
             raise
         log(f"{source.id}: ลองอ่านด้วยคำสั่ง /usage แทน ({error.detail})")
     return claude_text_usage(env, source, binary)
@@ -1486,6 +1494,16 @@ AGY_LOGIN_ERROR = re.compile(r"\b(?:log(?:ged)?[ -]?in|sign[ -]?in)\b|unauthori[
                              re.IGNORECASE)
 AGY_GROUPS = (("claude", "Claude"), ("gemini_pro", "Gemini Pro"),
               ("gemini_flash", "Gemini Flash"), ("gpt_oss", "GPT-OSS"))
+# Display: the "Gemini" group first, then the "add-ons" group (Claude and GPT on their own quota), then the rest.
+# Known CLI bucket keys keep this order and label; unknown keys follow their group by prefix.
+AGY_GROUP_GEMINI, AGY_GROUP_ADDON, AGY_GROUP_OTHER = "gemini", "addon", "other"
+AGY_GROUP_RANK = {AGY_GROUP_GEMINI: 0, AGY_GROUP_ADDON: 1, AGY_GROUP_OTHER: 2}
+AGY_KNOWN_CLI = (("gemini-5h", "Gemini Models · 5h"), ("gemini-weekly", "Gemini Models · Weekly"),
+                 ("gemini-argon-wtu-weekly", "Gemini Argon · Weekly"),
+                 ("3p-5h", "Claude & GPT · 5h"), ("3p-weekly", "Claude & GPT · Weekly"))
+AGY_KNOWN_LABEL = dict(AGY_KNOWN_CLI)
+AGY_DIRECT_GROUP = {"gemini_pro": AGY_GROUP_GEMINI, "gemini_flash": AGY_GROUP_GEMINI,
+                    "claude": AGY_GROUP_ADDON, "gpt_oss": AGY_GROUP_ADDON}
 
 
 def agy_key(raw, fallback: str, taken: set) -> str:
@@ -1498,6 +1516,32 @@ def agy_key(raw, fallback: str, taken: set) -> str:
         number += 1
     taken.add(candidate)
     return candidate
+
+
+def agy_limit_group(key: str) -> str:
+    """The display group of an agy limit by its key: known keys, then gemini-* (Gemini), 3p-* (add-ons), else other."""
+    if key in AGY_DIRECT_GROUP:
+        return AGY_DIRECT_GROUP[key]
+    if key.startswith("gemini"):
+        return AGY_GROUP_GEMINI
+    if key.startswith("3p-"):
+        return AGY_GROUP_ADDON
+    return AGY_GROUP_OTHER
+
+
+def arrange_agy_limits(limits: list) -> list:
+    """Adds `group` to each agy limit and puts them in display order: group first, then the known order of the
+    key, then the order the CLI gave. Known CLI keys also get their display label."""
+    known_order = {key: index for index, (key, _label) in enumerate(AGY_KNOWN_CLI)}
+    arranged = []
+    for position, limit in enumerate(limits):
+        key = limit["key"]
+        group = agy_limit_group(key)
+        if key in AGY_KNOWN_LABEL:
+            limit = dict(limit, label=AGY_KNOWN_LABEL[key])
+        rank = (AGY_GROUP_RANK[group], known_order.get(key, len(known_order)), position)
+        arranged.append((rank, dict(limit, group=group)))
+    return [limit for _rank, limit in sorted(arranged, key=lambda item: item[0])]
 
 
 def agy_cli_limits(groups) -> list:
@@ -1529,7 +1573,7 @@ def agy_cli_limits(groups) -> list:
             limits.append({"key": agy_key(bucket.get("id"), f"group-{group_index + 1}-{bucket_index + 1}", taken),
                            "label": label, "used_percent": round(used, 1),
                            "resets_at": iso_z(reset) if reset else None, "window_seconds": None})
-    return limits
+    return arrange_agy_limits(limits)
 
 
 def fetch_agy_cli(env: Env, source):
@@ -1585,7 +1629,7 @@ def group_agy_models(models):
             result.append({"key": key, "label": label, "used_percent": round(worst[key], 1),
                            "resets_at": iso_z(earliest[key]) if key in earliest else None,
                            "window_seconds": None})
-    return result
+    return arrange_agy_limits(result)
 
 
 def agy_group(name: str):

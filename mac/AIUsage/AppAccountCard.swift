@@ -24,6 +24,7 @@ struct AppAccountCardView: View, Equatable {
     @State private var tab: CardTab
     @Environment(\.uiLanguage) private var language
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.motionLevel) private var motion
 
     init(
         account: UsageAccount,
@@ -108,6 +109,11 @@ struct AppAccountCardView: View, Equatable {
             } else if let mix {
                 AccountModelMixView(account: account, mix: mix, actions: actions, snapshot: snapshot)
                     .transition(reduceMotion ? .opacity : .asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .trailing)))
+            } else {
+                // The Model mix tab has no data yet: a skeleton, not an empty tab.
+                SkeletonLoadingView(label: L10n.text(.loading, language), motion: motion) {
+                    SkeletonModelMix()
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -116,7 +122,9 @@ struct AppAccountCardView: View, Equatable {
     private var quotaBody: some View {
         let tiles = AppUsageInsights.usageTiles(account, mix: mix, shownPercents: nil, language: language)
         return VStack(alignment: .leading, spacing: 10) {
-            if AppUsageInsights.usesCompactLimits(account) {
+            if let sections = UsagePresenter.sections(for: account, language: language) {
+                groupedList(sections)
+            } else if AppUsageInsights.usesCompactLimits(account) {
                 compactList
             } else {
                 standardRows
@@ -125,7 +133,7 @@ struct AppAccountCardView: View, Equatable {
                 Divider()
                 HStack(spacing: 10) {
                     ForEach(tiles, id: \.title) { tile in
-                        UsageTileView(tile: tile)
+                        UsageTileView(tile: tile, motionKey: "window.\(account.id).\(tile.title)")
                     }
                 }
             }
@@ -137,12 +145,14 @@ struct AppAccountCardView: View, Equatable {
     /// is in the tooltip and is read by VoiceOver with the name.
     private var header: some View {
         HStack(alignment: .center, spacing: 8) {
-            LocalBrandIcon(
-                letter: AppUsageInsights.brandLetter(for: account),
+            slotBrand(
+                AppUsageInsights.brandLetter(for: account),
                 color: LocalPalette.brand(for: account.provider),
-                size: 24
+                size: 24,
+                key: "window.brand." + account.id,
+                motion: motion
             )
-            Text(AppUsageInsights.displayName(account))
+            typedText(AppUsageInsights.displayName(account), key: "window.name." + account.id, motion: motion)
                 .font(.system(size: 14, weight: .semibold))
                 .lineLimit(1)
                 .layoutPriority(1)
@@ -165,16 +175,86 @@ struct AppAccountCardView: View, Equatable {
                 StandardLimitRow(
                     limit: limit,
                     now: now,
-                    credit: index == 0 ? AppUsageInsights.creditText(account, language: language) : nil
+                    credit: index == 0 ? AppUsageInsights.creditText(account, language: language) : nil,
+                    motionKey: "window.\(account.id).\(index)",
+                    growDelay: 0.12 + Double(index) * 0.04
                 )
             }
         }
     }
 
+    /// agy limits in their groups: a small header for each group. The add-ons group sits in an inset rounded block with
+    /// its tag. Motion keys and the stagger still follow each limit's place in the file.
+    private func groupedList(_ sections: [LimitSection]) -> some View {
+        let order = sections.flatMap(\.indices)
+        return VStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
+                VStack(alignment: .leading, spacing: 6) {
+                    groupHeader(section)
+                    let rows = VStack(spacing: 0) {
+                        ForEach(Array(section.indices.enumerated()), id: \.offset) { position, index in
+                            CompactLimitRow(
+                                limit: account.limits[index],
+                                now: now,
+                                motionKey: "window.\(account.id).\(index)",
+                                growDelay: 0.12 + Double(order.firstIndex(of: index) ?? position) * 0.04
+                            )
+                            if position < section.indices.count - 1 {
+                                Divider()
+                            }
+                        }
+                    }
+                    if section.group == .addon {
+                        rows
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(Color.primary.opacity(0.03))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+                            )
+                            .padding(.horizontal, 6)
+                    } else {
+                        rows
+                            .padding(.horizontal, 12)
+                    }
+                }
+            }
+        }
+    }
+
+    /// "Gemini" or "ส่วนเสริม", with the tag "ใช้โควตาแยก" / "Separate quota" when the group has one.
+    private func groupHeader(_ section: LimitSection) -> some View {
+        HStack(spacing: 6) {
+            Text(section.title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+            if let tag = section.tag {
+                Text(tag)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(Color.primary.opacity(0.08)))
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .accessibilityElement(children: .combine)
+    }
+
     private var compactList: some View {
         VStack(spacing: 0) {
             ForEach(Array(account.limits.enumerated()), id: \.offset) { index, limit in
-                CompactLimitRow(limit: limit, now: now)
+                CompactLimitRow(
+                    limit: limit,
+                    now: now,
+                    motionKey: "window.\(account.id).\(index)",
+                    growDelay: 0.12 + Double(index) * 0.04
+                )
                 if index < account.limits.count - 1 {
                     Divider()
                 }
@@ -199,6 +279,10 @@ struct StandardLimitRow: View {
     let limit: UsageLimit
     let now: Date
     let credit: String?
+    /// The first-open motion key of this row (typing label, growing bar, rolling number). Nil: no first-open motion.
+    var motionKey: String?
+    var growDelay: Double = 0
+    @Environment(\.motionLevel) private var motion
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.uiLanguage) private var language
     @Environment(\.colorScheme) private var colorScheme
@@ -210,7 +294,7 @@ struct StandardLimitRow: View {
         let label = UsageFormat.windowLabel(limit, language: language)
         HStack(alignment: .center, spacing: 8) {
             HStack(spacing: 5) {
-                Text(label)
+                typedText(label, key: motionKey.map { $0 + ".label" }, motion: motion)
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
                     .fixedSize()
@@ -222,10 +306,13 @@ struct StandardLimitRow: View {
                 }
             }
             .layoutPriority(1)
-            LocalUsageBar(
+            usageBar(
                 fraction: UsageFormat.remainingFraction(used),
                 color: tier.color(colorScheme),
-                height: 6
+                height: 6,
+                growKey: motionKey.map { $0 + ".bar" },
+                growDelay: growDelay,
+                motion: motion
             )
             .frame(minWidth: 40, maxWidth: .infinity)
             if alert {
@@ -233,7 +320,13 @@ struct StandardLimitRow: View {
                     .fill(tier.color(colorScheme))
                     .frame(width: 6, height: 6)
             }
-            Text(UsageFormat.leftText(used, language))
+            rollingText(
+                number: UsageFormat.leftWhole(used).map(Double.init),
+                text: UsageFormat.leftText(used, language),
+                format: { L10n.percentLeft(Int($0.rounded()), language) },
+                key: motionKey.map { $0 + ".left" },
+                motion: motion
+            )
                 .font(.system(size: 13, weight: .semibold))
                 .monospacedDigit()
                 .foregroundStyle(tier.color(colorScheme))
@@ -261,6 +354,9 @@ struct StandardLimitRow: View {
 struct CompactLimitRow: View {
     let limit: UsageLimit
     let now: Date
+    var motionKey: String?
+    var growDelay: Double = 0
+    @Environment(\.motionLevel) private var motion
     @Environment(\.uiLanguage) private var language
     @Environment(\.colorScheme) private var colorScheme
 
@@ -271,7 +367,7 @@ struct CompactLimitRow: View {
             Circle()
                 .fill(tier.color(colorScheme))
                 .frame(width: 6, height: 6)
-            Text(UsageFormat.windowLabel(limit, language: language))
+            typedText(UsageFormat.windowLabel(limit, language: language), key: motionKey.map { $0 + ".label" }, motion: motion)
                 .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
             if let reset = UsageFormat.resetText(resetsAt: limit.resetsAt, now: now, language: language) {
@@ -281,14 +377,23 @@ struct CompactLimitRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
-            LocalUsageBar(
+            usageBar(
                 fraction: UsageFormat.remainingFraction(used),
                 color: tier.color(colorScheme),
-                height: 4
+                height: 4,
+                growKey: motionKey.map { $0 + ".bar" },
+                growDelay: growDelay,
+                motion: motion
             )
             .frame(minWidth: 48, idealWidth: 64, maxWidth: 84)
             VStack(alignment: .trailing, spacing: 0) {
-                Text(UsageFormat.leftText(used, language))
+                rollingText(
+                    number: UsageFormat.leftWhole(used).map(Double.init),
+                    text: UsageFormat.leftText(used, language),
+                    format: { L10n.percentLeft(Int($0.rounded()), language) },
+                    key: motionKey.map { $0 + ".left" },
+                    motion: motion
+                )
                     .font(.system(size: 12, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(tier.color(colorScheme))
@@ -314,6 +419,9 @@ struct CompactLimitRow: View {
 /// tokens. A thin colour bar under the numbers splits the period by model, in the same colours as the mix rows.
 struct UsageTileView: View {
     let tile: AppUsageInsights.UsageTile
+    /// The first-open key of the tile: its money counts up once per app session. Nil: no counting.
+    var motionKey: String?
+    @Environment(\.motionLevel) private var motion
     @Environment(\.uiLanguage) private var language
 
     var body: some View {
@@ -323,7 +431,13 @@ struct UsageTileView: View {
                 .foregroundStyle(.secondary)
             if let trial = tile.trialCostText {
                 HStack(spacing: 6) {
-                    Text(trial)
+                    rollingText(
+                        number: tile.trialValue,
+                        text: trial,
+                        format: { "~" + UsageFormat.moneyText($0) },
+                        key: motionKey.map { $0 + ".trial" },
+                        motion: motion
+                    )
                         .font(.system(size: 15, weight: .semibold))
                         .monospacedDigit()
                         .lineLimit(1)
@@ -335,7 +449,13 @@ struct UsageTileView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             } else {
-                Text(tile.costText ?? tile.tokensText)
+                rollingText(
+                    number: tile.costValue,
+                    text: tile.costText ?? tile.tokensText,
+                    format: { "~" + UsageFormat.moneyText($0) },
+                    key: motionKey.map { $0 + ".cost" },
+                    motion: motion
+                )
                     .font(.system(size: 15, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(tile.costText == nil ? Color.primary : LocalPalette.healthy)

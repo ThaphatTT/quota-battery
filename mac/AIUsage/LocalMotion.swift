@@ -6,9 +6,10 @@ enum LocalMotion {
         reduced ? .easeOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.8)
     }
 
-    /// Popover rows: a fade and a short slide, each row 30 ms after the one above it.
+    /// First-open rows: a fade (and an 8 pt slide up, drawn by the row), about 0.3 s, each row 60 ms after the one above it.
+    /// Reduce Motion: a 0.2 s cross-fade, all rows at once.
     static func rowReveal(index: Int, reduced: Bool) -> Animation {
-        .easeOut(duration: reduced ? 0.15 : 0.25).delay(Double(index) * 0.03)
+        reduced ? .easeOut(duration: 0.2) : .easeOut(duration: 0.3).delay(Double(index) * 0.06)
     }
 }
 

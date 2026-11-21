@@ -106,13 +106,18 @@ models below.
   as a fallback.
 - `error_code`: a language-neutral code, or `null` when `status` is `ok`. It says why this run
   failed. The codes are listed below. Readers map each code to their own text.
-- `limits`: ordered for display, most important first. `used_percent` is a number from 0 to 100.
+- `limits`: ordered for display, most important first. agy limits are ordered by `group` (gemini, addon, other),
+  then by the known key order above. `used_percent` is a number from 0 to 100.
   `resets_at` is ISO-8601 UTC or `null`.
   - `label` is the Thai window label that the collector writes. It is kept for older readers.
   - `window_seconds` is the window length in seconds, or `null`. Claude: `five_hour` is 18000 and
     every `seven_day*` key is 604800 (`seven_day_opus` and `seven_day_sonnet` keep their key). Codex:
     the length the CLI reports (`windowDurationMins` × 60, or the API's `limit_window_seconds` in direct
     mode). agy: `null` for every bucket and group, because the window is then part of the label.
+  - `group` (agy only, optional): the display group of a limit, `gemini` (Gemini models), `addon` (Claude and GPT
+    on their own quota, shown as "add-ons") or `other`. Readers show the `gemini` limits first, then `addon`, then
+    `other`, with a small header for each group. A file written before `group` existed has no such field: show
+    the agy limits as one flat list in the order given. Other providers never have `group`.
   - Readers build the limit label from `window_seconds` and `key` in their own language. When
     `window_seconds` is `null`, show `label`, which is then a model-group name such as `Gemini Pro`, or a
     bucket label such as `Gemini Models · 5h`.
@@ -120,8 +125,12 @@ models below.
     - Claude: `five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`. Other models have no key, since
       the widgets have no name to show for them.
     - Codex: `primary` and `secondary`, one per window in the answer. The length says which window it is.
-    - agy, default mode: the bucket `id` from the CLI, for example `gemini-5h` or `3p-weekly`.
-    - agy, direct mode: `claude`, `gemini_pro`, `gemini_flash` and `gpt_oss`.
+    - agy, default mode: the bucket `id` from the CLI, for example `gemini-5h` or `3p-weekly`. Known keys:
+      `gemini-5h` (label `Gemini Models · 5h`, group `gemini`), `gemini-weekly` (`Gemini Models · Weekly`, `gemini`),
+      `gemini-argon-wtu-weekly` (`Gemini Argon · Weekly`, `gemini`), `3p-5h` (`Claude & GPT · 5h`, `addon`) and
+      `3p-weekly` (`Claude & GPT · Weekly`, `addon`). Other `gemini-*` keys get group `gemini`, other `3p-*` keys
+      get `addon`, and any other key gets `other`.
+    - agy, direct mode: `gemini_pro` and `gemini_flash` (group `gemini`), then `claude` and `gpt_oss` (group `addon`).
 - `usage`: can be `null`. `cost_usd` is an estimate at API list prices, or `null` when unknown.
   For Claude, `tokens` counts input, output and cache writes. Cache reads are left out of that count,
   but they are included in `cost_usd`.
@@ -266,9 +275,11 @@ item and calls the provider's usage endpoint. It is described in the README.
 | `network` | The provider could not be reached, or its CLI did not answer within 30 seconds. |
 | `rate_limited` | The provider asked the collector to slow down (HTTP 429). |
 | `server_error` | The provider answered with a server error (HTTP 5xx). |
+| `quota_unavailable` | The CLI replied without a usable quota window. The reader can still show previously collected limits with a stale status. |
 | `unknown` | Anything else: a CLI that is not installed, or an answer in a shape the collector does not know. Readers show their own "unknown error" text in the chosen language. |
 
 Readers must fall back to the Thai `error` text when `error_code` is missing or is a code they do not know.
+Readers also recognize the older Claude no-quota message (`unknown` with `ไม่พบข้อมูลโควตา Claude`) as `quota_unavailable`.
 
 ## settings.json (written by the Mac app)
 

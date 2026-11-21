@@ -105,7 +105,7 @@ struct AccountModelMixView: View {
                         .monospacedDigit()
                 }
             }
-            ModelMixBar(rows: shown.rows, reduceMotion: reduceMotion)
+            ModelMixBar(rows: shown.rows, reduceMotion: reduceMotion, motionKey: "mix.bar." + mix.accountID)
             VStack(spacing: 2) {
                 ForEach(Array(shown.rows.enumerated()), id: \.element.id) { index, row in
                     ModelMixRowView(
@@ -131,7 +131,7 @@ struct AccountModelMixView: View {
             Divider()
             HStack(spacing: 10) {
                 ForEach(AppUsageInsights.usageTiles(account, mix: mix, shownPercents: shown.percents, language: language), id: \.title) { tile in
-                    UsageTileView(tile: tile)
+                    UsageTileView(tile: tile, motionKey: "mix.\(account.id).\(tile.title)")
                 }
             }
         }
@@ -163,14 +163,21 @@ struct AccountModelMixView: View {
 struct ModelMixBar: View {
     let rows: [ModelMixRow]
     let reduceMotion: Bool
+    /// The first-open key of this bar. Its first showing in the app session grows the bar from empty on a liquid spring.
+    var motionKey: String?
+    @Environment(\.motionLevel) private var motion
+    /// The growth of the first showing, 0 to 1. Made only when live and only for a bar with a key.
+    @State private var growth: LiquidSpring?
+    @State private var tick = 0
 
     var body: some View {
+        let scale = motion == .live ? min(max(growth?.position ?? 1, 0), 1) : 1
         GeometryReader { geometry in
             HStack(spacing: 0) {
                 ForEach(rows) { row in
                     Rectangle()
                         .fill(ModelMixColor.color(for: row.family))
-                        .frame(width: geometry.size.width * CGFloat(row.percent) / 100)
+                        .frame(width: geometry.size.width * CGFloat(row.percent) / 100 * scale)
                 }
             }
         }
@@ -178,7 +185,18 @@ struct ModelMixBar: View {
         .clipShape(Capsule())
         .background(Capsule().fill(Color.primary.opacity(0.08)))
         .animation(LocalMotion.spring(reduced: reduceMotion), value: rows.map(\.percent))
+        .animation(nil, value: tick)
         .accessibilityHidden(true)
+        .task(id: motion == .live ? motionKey : nil) {
+            guard motion == .live, let motionKey, FirstOpenTracker.shared.claim("bar." + motionKey) else { return }
+            let spring = LiquidSpring(position: 0, target: 1)
+            growth = spring
+            await MotionLoop.run {
+                spring.advance(to: Date())
+                tick &+= 1
+                return !spring.isSettled
+            }
+        }
     }
 }
 

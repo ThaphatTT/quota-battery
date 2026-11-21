@@ -743,16 +743,16 @@ const OPUS_SONNET_TEXT = usageFile([{
 }]);
 
 // One account with an error, its error_code (undefined leaves the field out) and a Thai error text.
-function errorCodeFile(code) {
+function errorCodeFile(code, error = "ข้อความเดิม") {
   const acc = {
     id: "claude-main", provider: "claude", label: "Claude", plan: "Max", status: "error",
-    error: "ข้อความเดิม", updated_at: null, limits: [], usage: null, credits: null,
+    error, updated_at: null, limits: [], usage: null, credits: null,
   };
   if (code !== undefined) acc.error_code = code;
   return usageFile([acc]);
 }
 
-// The seven error codes, with their Thai and English texts.
+// Error codes with their Thai and English texts.
 const ERROR_CODE_TEXTS = [
   ["login_expired", "ล็อกอินหมดอายุ", "Sign-in expired"],
   ["relogin_needed", "ต้องล็อกอินใหม่", "Sign in again"],
@@ -760,6 +760,7 @@ const ERROR_CODE_TEXTS = [
   ["network", "เชื่อมต่อเครือข่ายไม่ได้", "No network connection"],
   ["rate_limited", "ถูกจำกัดการเรียกชั่วคราว", "Rate limited for now"],
   ["server_error", "เซิร์ฟเวอร์มีปัญหา", "Server error"],
+  ["quota_unavailable", "ยังไม่มีข้อมูลโควตา", "Quota data unavailable"],
   ["unknown", "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ", "Unknown error"],
 ];
 
@@ -1585,6 +1586,13 @@ test("an unrecognised error_code falls back to the Thai error text in both langu
   assert.ok(en.includes("ข้อความเดิม"), "the Thai error stands in");
 });
 
+test("a legacy Claude no-quota row shows the specific message", async () => {
+  const files = { [FILE]: errorCodeFile("unknown", "ไม่พบข้อมูลโควตา Claude") };
+  const en = textValues(homeWidget(await render({ family: "medium", files, deviceLanguage: "en" })));
+  assert.ok(en.includes("Quota data unavailable"));
+  assert.ok(!en.includes("Unknown error"));
+});
+
 test("a missing error_code falls back to the Thai error text in both languages", async () => {
   const th = textValues(homeWidget(await render({ family: "medium", files: { [FILE]: errorCodeFile(undefined) } })));
   assert.ok(th.includes("ข้อความเดิม"));
@@ -1964,4 +1972,65 @@ test("the header reads Quota Battery in Thai and in English, in every family", a
       assert.ok(t.includes("Quota Battery"), `${family} on ${deviceLanguage}: header is not "Quota Battery"`);
     }
   }
+});
+
+// agy groups (the collector writes "group" on every agy limit). Gemini first, then add-ons, then other. A file with no
+// group on some limit keeps its order and shows no headers.
+function agyFile(limits) {
+  return JSON.stringify({
+    schema: 1,
+    generated_at: NOW_ISO,
+    accounts: [
+      {
+        id: "agy-main", provider: "agy", label: "agy", plan: null, status: "ok", updated_at: NOW_ISO,
+        limits, usage: null, credits: null,
+      },
+    ],
+  });
+}
+
+const GROUPED_LIMITS = [
+  { key: "3p-weekly", label: "Claude & GPT · Weekly", used_percent: 100, resets_at: "2026-11-24T02:00:00Z", group: "addon" },
+  { key: "gemini-5h", label: "Gemini Models · 5h", used_percent: 58, resets_at: "2026-11-19T09:00:00Z", group: "gemini" },
+  { key: "gemini-weekly", label: "Gemini Models · Weekly", used_percent: 40, resets_at: "2026-11-24T02:00:00Z", group: "gemini" },
+  { key: "3p-5h", label: "Claude & GPT · 5h", used_percent: 0, resets_at: "2026-11-19T09:00:00Z", group: "addon" },
+  { key: "zz-new", label: "Mystery · 5h", used_percent: 10, resets_at: null, group: "weird" },
+];
+
+test("agy groups: large shows Gemini first with its header, then the add-ons header and tag, then other", async () => {
+  const files = { [FILE]: agyFile(GROUPED_LIMITS) };
+  const w = homeWidget(await render({ family: "large", files, deviceLanguage: "en" }));
+  const t = textValues(w);
+  const at = (v) => t.indexOf(v);
+  assert.ok(at("Gemini") >= 0 && at("Add-ons") > at("Gemini"), "Gemini header comes before the add-ons header");
+  assert.ok(at("Separate quota") > at("Add-ons"), "the add-ons tag sits under its header");
+  assert.ok(at("Other") > at("Separate quota"), "unknown groups come last under Other");
+  const rows = t.filter((v) => v.startsWith("agy · "));
+  assert.deepEqual(rows, ["agy · Gemini Models · 5h", "agy · Gemini Models · Weekly",
+    "agy · Claude & GPT · Weekly", "agy · Claude & GPT · 5h", "agy · Mystery · 5h"], "rows keep the group order");
+  assert.equal(rows[0], "agy · Gemini Models · 5h", "the Gemini 5-hour row is first");
+  assertRefresh(w);
+});
+
+test("agy groups: the add-ons header is Thai in Thai", async () => {
+  const files = { [FILE]: agyFile(GROUPED_LIMITS) };
+  const t = textValues(homeWidget(await render({ family: "large", files, deviceLanguage: "th" })));
+  for (const v of ["Gemini", "ส่วนเสริม", "ใช้โควตาแยก", "อื่นๆ"]) assert.ok(t.includes(v), `missing "${v}"`);
+});
+
+test("agy groups: small and medium show the Gemini limit, not the most used one", async () => {
+  const files = { [FILE]: agyFile(GROUPED_LIMITS) };
+  const small = textValues(homeWidget(await render({ family: "small", files, deviceLanguage: "en" })));
+  assert.ok(small.includes("42"), "small ring shows Gemini 5h (58% used, 42 left), not the add-on (0 left)");
+  assert.ok(!small.includes("0"), "the add-on's ring (0 left) is not the one shown");
+  const medium = textValues(homeWidget(await render({ family: "medium", files, deviceLanguage: "en" })));
+  assert.ok(medium.some((v) => v.startsWith("Gemini Models · 5h")), "medium row is the Gemini 5-hour limit");
+});
+
+test("agy groups: an old file with no group field keeps its order and shows no headers", async () => {
+  const flat = GROUPED_LIMITS.map(({ group, ...rest }) => rest);
+  const t = textValues(homeWidget(await render({ family: "large", files: { [FILE]: agyFile(flat) }, deviceLanguage: "en" })));
+  assert.ok(!t.includes("Gemini") && !t.includes("Add-ons") && !t.includes("Other"), "no group headers");
+  const rows = t.filter((v) => v.startsWith("agy · "));
+  assert.equal(rows[0], "agy · Claude & GPT · Weekly", "the file order is kept");
 });

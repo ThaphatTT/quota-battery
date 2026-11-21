@@ -7,10 +7,8 @@ import SwiftUI
 /// switch in the app window only changes `isVisible`.
 @MainActor
 final class StatusItemController: NSObject {
-    private let model: UsageViewModel
-    private let openMainWindow: () -> Void
     private let statusItem: NSStatusItem
-    private let popover = NSPopover()
+    private let usagePopover: UsagePopoverController
     private var imageSubscription: AnyCancellable?
     private var languageSubscription: AnyCancellable?
     /// Watches the "show icon" key only. See `UserDefaults.showMenuBarIcon`.
@@ -19,15 +17,10 @@ final class StatusItemController: NSObject {
     private var appliedVisibility: Bool?
     /// True while `isVisible` is being set. AppKit writes its own defaults then, which must not start the rule again.
     private var isApplyingVisibility = false
-    /// When the popover last closed. A click on the icon closes the popover first, then arrives as a toggle,
-    /// so a toggle right after a close is ignored.
-    private var lastClosedAt: Date?
-
     private static let autosaveName = "AIUsageStatusItem"
 
     init(model: UsageViewModel, openMainWindow: @escaping () -> Void) {
-        self.model = model
-        self.openMainWindow = openMainWindow
+        usagePopover = UsagePopoverController(model: model, openMainWindow: openMainWindow)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
@@ -36,9 +29,6 @@ final class StatusItemController: NSObject {
         statusItem.autosaveName = Self.autosaveName
         statusItem.behavior = []
         applyVisibility()
-
-        popover.behavior = .transient
-        popover.delegate = self
 
         if let button = statusItem.button {
             button.target = self
@@ -84,23 +74,59 @@ final class StatusItemController: NSObject {
         }
     }
 
-    @objc private func togglePopover(_ sender: AnyObject?) {
+    @objc private func togglePopover(_ sender: NSButton) {
+        usagePopover.toggle(relativeTo: sender, edge: .minY, activateApp: true)
+    }
+}
+
+/// Hosts the same usage view from any AppKit button.
+@MainActor
+final class UsagePopoverController: NSObject, NSPopoverDelegate {
+    private let model: UsageViewModel
+    private let openMainWindow: () -> Void
+    private let popover = NSPopover()
+    /// A transient popover can close on the anchor's mouse-down before the toggle's mouse-up.
+    private var lastClosedAt: Date?
+
+    init(model: UsageViewModel, openMainWindow: @escaping () -> Void) {
+        self.model = model
+        self.openMainWindow = openMainWindow
+        super.init()
+        popover.behavior = .transient
+        popover.delegate = self
+    }
+
+    func close(immediately: Bool = false) {
+        guard popover.isShown else { return }
+        if immediately {
+            let animates = popover.animates
+            popover.animates = false
+            popover.close()
+            popover.animates = animates
+        } else {
+            popover.performClose(nil)
+        }
+    }
+
+    func toggle(relativeTo button: NSView, edge: NSRectEdge, activateApp: Bool,
+                makeContent: (() -> NSViewController)? = nil) {
         if popover.isShown {
-            popover.performClose(sender)
+            close()
             return
         }
         if let lastClosedAt, Date().timeIntervalSince(lastClosedAt) < 0.3 {
             return
         }
-        guard let button = statusItem.button else { return }
-        let content = makeContentController()
+        let content = makeContent?() ?? makeContentController()
         popover.contentViewController = content
         let size = content.view.fittingSize
         if size.width > 0, size.height > 0 {
             popover.contentSize = size
         }
-        NSApp.activate(ignoringOtherApps: true)
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        if activateApp {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: edge)
     }
 
     /// A new hosting controller for each opening, so the rows fade in again every time the popover opens.
@@ -109,7 +135,7 @@ final class StatusItemController: NSObject {
             rootView: MenuBarPopoverHost(
                 model: model,
                 onOpenApp: { [weak self] in
-                    self?.popover.performClose(nil)
+                    self?.close()
                     self?.openMainWindow()
                 },
                 onQuit: {
@@ -120,9 +146,7 @@ final class StatusItemController: NSObject {
         host.sizingOptions = [.preferredContentSize]
         return host
     }
-}
 
-extension StatusItemController: NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         lastClosedAt = Date()
         // The closed popover's views would still follow the model, so they are let go until the next opening.

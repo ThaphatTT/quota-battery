@@ -1,5 +1,20 @@
 import Foundation
 
+enum CodexUsageRingPlacement {
+    static let size = CGSize(width: 44, height: 48)
+
+    /// AX uses a top-left origin. The fallback is measured from the compact rail in the supplied screenshot.
+    static func frame(in window: CGRect, usage: CGRect?, profile: CGRect?) -> CGRect? {
+        guard window.width >= 280, window.height >= 190 else { return nil }
+        let centerX = usage?.midX ?? profile?.midX ?? window.minX + 26
+        let anchorTop = usage?.minY ?? profile.map { $0.midY - 56 } ?? window.maxY - 78
+        let result = CGRect(x: centerX - size.width / 2, y: anchorTop - size.height - 6,
+                            width: size.width, height: size.height)
+        guard window.contains(result), result.minX >= window.minX + 2, result.maxX <= window.minX + 66 else { return nil }
+        return result.integral
+    }
+}
+
 /// The values the views draw. Plain data, so a snapshot can be built without the model.
 struct AppUsageState: Equatable {
     var result: UsageLoadResult
@@ -9,6 +24,8 @@ struct AppUsageState: Equatable {
     var notice: RefreshNotice?
     /// The Model mix of each account that has one, by account id. An account without one has no Model mix tab.
     var accountMixes: [String: AccountModelMix] = [:]
+    /// False until the first usage.json read has finished. The views show a skeleton until then, not "no data".
+    var isLoaded: Bool = true
 
     var document: UsageDocument? { result.document }
     var accounts: [UsageAccount] { result.document?.accounts ?? [] }
@@ -41,6 +58,8 @@ enum AppUsageInsights {
     struct SublineText: Equatable {
         let text: String
         let isError: Bool
+        /// True for the agy group lines: every line is shown, so a long group line wraps instead of being cut off.
+        var showsAllLines: Bool = false
     }
 
     struct UsageTile: Equatable {
@@ -52,6 +71,9 @@ enum AppUsageInsights {
         var bar: [TileBarSegment] = []
         /// The what-if cost, shown big in the Model mix tab while the mix is a trial. Nil otherwise.
         var trialCostText: String? = nil
+        /// The numbers behind `costText` and `trialCostText`, so the money can count up. Nil when there is no cost.
+        var costValue: Double? = nil
+        var trialValue: Double? = nil
     }
 
     /// One model's part of a tile's colour bar.
@@ -159,6 +181,18 @@ enum AppUsageInsights {
         if isProblem(account), let error = errorText(account, language: language) {
             return SublineText(text: error, isError: true)
         }
+        if let sections = UsagePresenter.sections(for: account, language: language) {
+            // agy: one line per group, "Gemini: Models 5h 58% · Models Weekly 40%" and "Add-ons: Claude & GPT 5h 100%".
+            let lines = sections.map { section -> String in
+                let items = section.indices.map { index -> String in
+                    let limit = account.limits[index]
+                    let left = UsageFormat.leftWhole(limit.usedPercent).map { "\($0)%" } ?? "—"
+                    return "\(UsagePresenter.shortAgyLabel(limit, language: language)) \(left)"
+                }
+                return "\(section.title): " + items.joined(separator: " · ")
+            }
+            return SublineText(text: lines.joined(separator: "\n"), isError: false, showsAllLines: true)
+        }
         if account.limits.count == 2 {
             let lines = account.limits
                 .map { "\(UsageFormat.windowLabel($0, language: language)) \(UsageFormat.leftText($0.usedPercent, language))" }
@@ -219,7 +253,7 @@ enum AppUsageInsights {
     ) -> UsageTile {
         let tokens = bucket?.tokens.map { L10n.tokens(UsageFormat.tokensText($0), language) } ?? "—"
         let cost = bucket?.costUsd.map { "~\(UsageFormat.moneyText($0))" }
-        var result = UsageTile(title: title, tokensText: tokens, costText: cost)
+        var result = UsageTile(title: title, tokensText: tokens, costText: cost, costValue: bucket?.costUsd)
         if let basis {
             let percents = shown ?? basis.realPercents
             if percents.count == basis.models.count {
@@ -230,6 +264,7 @@ enum AppUsageInsights {
         }
         if let trialCost {
             result.trialCostText = "~\(UsageFormat.moneyText(trialCost))"
+            result.trialValue = trialCost
         }
         return result
     }

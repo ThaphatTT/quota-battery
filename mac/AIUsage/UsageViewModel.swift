@@ -9,6 +9,8 @@ final class UsageViewModel: ObservableObject {
     @Published private(set) var result: UsageLoadResult
     @Published private(set) var now = Date()
     @Published private(set) var isRefreshing = false
+    /// Loading until the first usage.json read has finished (see `deferFirstRead`), then loaded for good.
+    @Published private(set) var loadPhase: LoadPhase
     /// What the app says about its last refresh once it has finished. Its text is made when it is drawn.
     @Published private(set) var notice: RefreshNotice?
     /// The user's language choice. Saved to settings.json; the widgets are reloaded when it changes.
@@ -62,7 +64,8 @@ final class UsageViewModel: ObservableObject {
         settingsURL: URL = AppSettingsStore.defaultFileURL(),
         knownAccountsURL: URL = KnownAccounts.defaultFileURL(),
         uid: uid_t = getuid(),
-        writeModelMix: @escaping (String, ModelMixSettings, URL) throws -> Void = { try AppSettingsStore.saveModelMix($1, accountID: $0, at: $2) }
+        writeModelMix: @escaping (String, ModelMixSettings, URL) throws -> Void = { try AppSettingsStore.saveModelMix($1, accountID: $0, at: $2) },
+        deferFirstRead: Bool = false
     ) {
         self.fileURL = fileURL
         self.settingsURL = settingsURL
@@ -70,7 +73,9 @@ final class UsageViewModel: ObservableObject {
         self.uid = uid
         self.writeModelMix = writeModelMix
         self.reloadedMinute = Self.minute(of: Date())
-        self.result = UsageLoader.load(from: fileURL)
+        // The app reads usage.json off the main thread, so the window can show its skeleton first. Tests read at once.
+        self.result = deferFirstRead ? .missing : UsageLoader.load(from: fileURL)
+        self.loadPhase = deferFirstRead ? .loading : .loaded
         self.languageChoice = AppSettingsStore.load(from: settingsURL)
         self.knownAccounts = KnownAccounts.load(from: knownAccountsURL)
         self.accountSettings = AppSettingsStore.loadAccountSettings(from: settingsURL)
@@ -80,11 +85,28 @@ final class UsageViewModel: ObservableObject {
         writeNotifySetting()
         // Taken after the notify write, so the app's own write does not look like a change at the first poll.
         fileStamps = [fileURL, knownAccountsURL, settingsURL].map { FileStamp($0) }
+        if deferFirstRead {
+            startFirstRead()
+        }
         notifySwitch = UserDefaults.standard.observe(\.notifyAt80And95, options: [.new]) { [weak self] _, _ in
             Task { @MainActor in self?.writeNotifySetting() }
         }
         startPolling()
         watchFolder()
+    }
+
+    /// Reads usage.json off the main thread. It finishes the first read unless a reload already did.
+    private func startFirstRead() {
+        let url = fileURL
+        Task {
+            let loaded = await Task.detached(priority: .userInitiated) { UsageLoader.load(from: url) }.value
+            guard !loadPhase.isLoaded else { return }
+            if loaded != result {
+                result = loaded
+            }
+            statusItem.set(percent: AppUsageInsights.overallPercent(loaded.document))
+            loadPhase = .loaded
+        }
     }
 
     /// The language the texts are drawn in right now: the choice, with `system` resolved on this Mac.
@@ -98,7 +120,8 @@ final class UsageViewModel: ObservableObject {
             now: now,
             isRefreshing: isRefreshing,
             notice: notice,
-            accountMixes: accountMixes
+            accountMixes: accountMixes,
+            isLoaded: loadPhase.isLoaded
         )
     }
 
@@ -170,6 +193,9 @@ final class UsageViewModel: ObservableObject {
         let loaded = UsageLoader.load(from: fileURL)
         if loaded != result {
             result = loaded
+        }
+        if !loadPhase.isLoaded {
+            loadPhase = .loaded
         }
         let known = KnownAccounts.load(from: knownAccountsURL)
         if known != knownAccounts {
@@ -254,7 +280,8 @@ final class UsageViewModel: ObservableObject {
             sort: accountSettings.sort,
             notice: accountNotice,
             isRefreshing: isRefreshing,
-            directMode: directMode
+            directMode: directMode,
+            isLoaded: loadPhase.isLoaded
         )
     }
 

@@ -8,6 +8,8 @@ struct AccountsPanelState: Equatable {
     var isRefreshing: Bool
     /// The direct mode switches. Only the ChatGPT and agy rows show the control.
     var directMode: DirectModeSettings = .off
+    /// False until the first usage.json read has finished: the rows are a skeleton until then.
+    var isLoaded: Bool = true
 }
 
 /// What the section's controls do. The window passes the model's actions. A snapshot passes none.
@@ -50,13 +52,30 @@ struct AppAccountsSection: View {
     /// Set only by the snapshot tests. ImageRenderer cannot draw the native switch, the segmented control or a drop
     /// target (it draws a "not allowed" placeholder), so the snapshot draws look-alikes in their place. The window
     /// always uses the native controls.
+    /// True while the Accounts tab is the one on screen. The first showing plays the first-open motion, and only then.
+    var isShowing: Bool = true
     var snapshot: Bool = false
     @Environment(\.uiLanguage) private var language
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The rows have been shown (a snapshot starts shown).
+    @State private var revealed = false
+    /// How the rows enter. Nil until decided: `slide` on the section's first showing in the app session, `none` after.
+    @State private var intro: IntroStyle?
+
+    private var motion: MotionLevel { MotionLevel.resolve(reduceMotion: reduceMotion, snapshot: snapshot) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            if state.rows.isEmpty {
+            if !state.isLoaded {
+                SkeletonLoadingView(label: L10n.text(.loading, language), motion: motion) {
+                    VStack(spacing: 2) {
+                        ForEach(0..<2, id: \.self) { _ in
+                            SkeletonAccountRow()
+                        }
+                    }
+                }
+            } else if state.rows.isEmpty {
                 Text(L10n.text(.noAccounts, language))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
@@ -64,13 +83,14 @@ struct AppAccountsSection: View {
                     .padding(.vertical, 6)
             } else {
                 VStack(spacing: 2) {
-                    ForEach(state.rows) { row in
+                    ForEach(Array(state.rows.enumerated()), id: \.element.id) { index, row in
                         AccountRowView(
                             row: row,
                             canReorder: state.sort == .manual,
                             actions: actions,
                             snapshot: snapshot
                         )
+                        .modifier(FirstOpenReveal(shown: revealed || snapshot, style: intro ?? .none, index: index))
                     }
                 }
             }
@@ -92,11 +112,27 @@ struct AppAccountsSection: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
         )
+        .environment(\.motionLevel, motion)
+        .onAppear { decideIntro() }
+        .onChange(of: state.isLoaded) { _, _ in decideIntro() }
+        .onChange(of: isShowing) { _, _ in decideIntro() }
+    }
+
+    /// Shows the rows once the first read has finished and the tab is on screen. Only the first showing in the app session
+    /// plays the motion.
+    private func decideIntro() {
+        guard state.isLoaded, isShowing, intro == nil else { return }
+        if snapshot {
+            intro = IntroStyle.none
+        } else {
+            intro = IntroStyle.resolve(isFirst: FirstOpenTracker.shared.claim("settings.accounts"), reduceMotion: reduceMotion, snapshot: false)
+        }
+        revealed = true
     }
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text(L10n.text(.accountsTitle, language))
+            typedText(L10n.text(.accountsTitle, language), key: "settings.accounts.title", motion: motion)
                 .font(.system(size: 15, weight: .semibold))
             Spacer(minLength: 8)
             Button(action: actions.rescan) {

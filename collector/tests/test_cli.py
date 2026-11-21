@@ -136,7 +136,7 @@ class ClaudeGetUsageTests(CliBase):
         self.use_clis({"claude": claude_program((reply, claude_text_lines(text="Current session: no data")))})
         acc = self.collect_real(make_env(self.home), "claude")
         self.assertEqual((acc["status"], acc["error_code"], acc["error"]),
-                         ("error", "unknown", m.MSG_CLAUDE_NO_QUOTA))
+                         ("error", "quota_unavailable", m.MSG_CLAUDE_NO_QUOTA))
         self.assertIn("get_usage: rate_limits_available is false", self.stderr.getvalue())
 
     def test_the_usage_text_answers_when_get_usage_has_no_subscription_limits(self):
@@ -165,12 +165,34 @@ class ClaudeGetUsageTests(CliBase):
         acc = self.collect_real(make_env(self.home), "claude")
         self.assertEqual((acc["status"], acc["error_code"]), ("error", "unknown"))
 
-    def test_no_usable_limit_in_either_run_is_an_unknown_error(self):
+    def test_no_usable_limit_in_either_run_is_quota_unavailable(self):
         empty = claude_text_lines(text="Current session: no data")
         self.use_clis({"claude": claude_program((claude_stream_lines(payload={"rate_limits": {}}), empty))})
         acc = self.collect_real(make_env(self.home), "claude")
         self.assertEqual((acc["status"], acc["error_code"], acc["error"]),
-                         ("error", "unknown", m.MSG_CLAUDE_NO_QUOTA))
+                         ("error", "quota_unavailable", m.MSG_CLAUDE_NO_QUOTA))
+
+    def test_missing_quota_keeps_the_last_good_limits_and_timestamp(self):
+        empty = claude_text_lines(text="Current session: no data")
+        self.use_clis({"claude": claude_program((claude_stream_lines(payload={"rate_limits": {}}), empty))})
+        env = make_env(self.home)
+        source = m.default_source("claude", env.paths)
+        previous = {"status": "ok", "updated_at": "2026-11-18T17:00:00Z",
+                    "limits": [{"key": "five_hour", "used_percent": 40.0, "window_seconds": 18000}]}
+        acc = m.collect_account(env, source, previous)
+        self.assertEqual((acc["status"], acc["error_code"]), ("stale", "quota_unavailable"))
+        self.assertEqual(acc["updated_at"], previous["updated_at"])
+        self.assertEqual(acc["limits"], previous["limits"])
+
+    def test_usage_rate_limit_is_classified_without_copying_the_provider_payload(self):
+        result = claude_text_lines(
+            text='Failed to load usage data: {"error":{"type":"rate_limit_error","message":"provider payload"}}',
+            is_error=True)
+        self.use_clis({"claude": claude_program((claude_stream_lines(payload={"rate_limits_available": False}), result))})
+        acc = self.collect_real(make_env(self.home), "claude")
+        self.assertEqual((acc["status"], acc["error_code"], acc["error"]),
+                         ("error", "rate_limited", m.MSG_CLAUDE_RATE_LIMITED))
+        self.assertNotIn("provider payload", self.stderr.getvalue())
 
     def test_a_claude_folder_is_never_read_from_the_keychain(self):
         self.all_clis_ok()
@@ -205,6 +227,18 @@ class ClaudeUsageTextTests(CliBase):
     def test_a_reset_time_that_cannot_be_read_keeps_the_percentage(self):
         limits = self.parse("Current session: 40% used · resets sometime soon\n")
         self.assertEqual((limits[0]["used_percent"], limits[0]["resets_at"]), (40.0, None))
+
+    def test_wrapped_headers_and_reset_lines_do_not_cross_to_the_next_window(self):
+        limits = self.parse(
+            "Current session\r\n"
+            "  40% used\r\n"
+            "  Resets Nov 19 at 6pm (Europe/Berlin)\r\n"
+            "Current week (all models):\r\n"
+            "  67% used\r\n"
+            "Current week (Sonnet): no data\r\n"
+            "  Disk utilization: 10% used\r\n")
+        self.assertEqual([(item["key"], item["used_percent"], item["resets_at"]) for item in limits],
+                         [("five_hour", 40.0, "2026-11-19T17:00:00Z"), ("seven_day", 67.0, None)])
 
     def test_reset_texts_are_read_in_their_own_zone_with_the_year_worked_out(self):
         cases = {
@@ -325,9 +359,9 @@ class AgyUsageTests(CliBase):
         self.assertEqual(acc["status"], "ok")
         self.assertEqual([(limit["key"], limit["label"], limit["used_percent"], limit["resets_at"],
                            limit["window_seconds"]) for limit in acc["limits"]],
-                         [("gemini-weekly", "Gemini Models · Weekly", 50.0, "2026-11-24T02:00:00Z", None),
-                          ("gemini-5h", "Gemini Models · 5h", 0.0, "2026-11-19T09:00:00Z", None),
-                          ("3p-weekly", "Claude and GPT models · Weekly", 100.0, "2026-11-24T02:00:00Z", None)])
+                         [("gemini-5h", "Gemini Models · 5h", 0.0, "2026-11-19T09:00:00Z", None),
+                          ("gemini-weekly", "Gemini Models · Weekly", 50.0, "2026-11-24T02:00:00Z", None),
+                          ("3p-weekly", "Claude & GPT · Weekly", 100.0, "2026-11-24T02:00:00Z", None)])
 
     def test_agy_is_not_started_without_a_keychain_login(self):
         self.keychain.passwords.clear()

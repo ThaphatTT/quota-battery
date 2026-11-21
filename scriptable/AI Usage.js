@@ -23,6 +23,10 @@ const TEXT = {
     usageTitle: "Quota Battery",
     limitsTitle: "Quota Battery",
     liveStatus: "สถานะเรียลไทม์",
+    groupGemini: "Gemini",
+    groupAddons: "ส่วนเสริม",
+    groupAddonsTag: "ใช้โควตาแยก",
+    groupOther: "อื่นๆ",
     systemStatus: "สถานะระบบ",
     almostOut: "ใกล้หมด",
     almostOutCount: (n) => "ใกล้หมด " + n + " รายการ",
@@ -45,6 +49,7 @@ const TEXT = {
       network: "เชื่อมต่อเครือข่ายไม่ได้",
       rate_limited: "ถูกจำกัดการเรียกชั่วคราว",
       server_error: "เซิร์ฟเวอร์มีปัญหา",
+      quota_unavailable: "ยังไม่มีข้อมูลโควตา",
       unknown: "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ",
     },
     chatgpt: {
@@ -73,6 +78,10 @@ const TEXT = {
     usageTitle: "Quota Battery",
     limitsTitle: "Quota Battery",
     liveStatus: "Live status",
+    groupGemini: "Gemini",
+    groupAddons: "Add-ons",
+    groupAddonsTag: "Separate quota",
+    groupOther: "Other",
     systemStatus: "System status",
     almostOut: "Almost out",
     almostOutCount: (n) => n + " almost out",
@@ -95,6 +104,7 @@ const TEXT = {
       network: "No network connection",
       rate_limited: "Rate limited for now",
       server_error: "Server error",
+      quota_unavailable: "Quota data unavailable",
       unknown: "Unknown error",
     },
     chatgpt: {
@@ -271,21 +281,47 @@ function limitNameOf(limit, lang) {
   return base;
 }
 
+// agy groups: the collector writes "group" on every agy limit ("gemini", "addon" or "other"). The groups are
+// shown in that order, Gemini first. A file with no group on some limit is not grouped, and keeps its order.
+const GROUP_RANK = { gemini: 0, addon: 1, other: 2 };
+
+function groupOf(v) {
+  const g = cleanText(v);
+  if (g === null) return null;
+  return Object.prototype.hasOwnProperty.call(GROUP_RANK, g) ? g : "other";
+}
+
 function limitsOf(acc, lang) {
   const list = Array.isArray(acc.limits) ? acc.limits : [];
-  return list.filter(isObject).map((l) => {
+  const out = list.filter(isObject).map((l) => {
     const key = cleanText(l.key) || "";
     return {
       key,
       label: limitNameOf({ key, label: cleanText(l.label), windowSeconds: windowOf(l.window_seconds) }, lang),
       pct: numOrNull(l.used_percent),
       resetsAt: timeOf(l.resets_at),
+      group: groupOf(l.group),
     };
   });
+  if (out.length > 0 && out.every((l) => l.group !== null)) {
+    // Stable: each group keeps its file order.
+    return out
+      .map((l, i) => ({ l, i }))
+      .sort((a, b) => GROUP_RANK[a.l.group] - GROUP_RANK[b.l.group] || a.i - b.i)
+      .map((x) => x.l);
+  }
+  return out;
+}
+
+// True when the account's limits are grouped (see limitsOf).
+function isGrouped(limits) {
+  return limits.length > 0 && limits.every((l) => l.group !== null);
 }
 
 // The limit with the highest percentage (the first one on a tie). With no number at all, the first limit.
+// A grouped account has no "highest": its first limit is Gemini's, so the small and medium widgets show that one.
 function topLimit(limits) {
+  if (isGrouped(limits)) return limits.find((l) => l.pct !== null) || limits[0];
   let best = null;
   for (const l of limits) {
     if (l.pct !== null && (best === null || l.pct > best.pct)) best = l;
@@ -350,8 +386,10 @@ function updatedAtOf(usage, accounts) {
 function errorTextOf(acc, lang) {
   const code = cleanText(acc.error_code);
   const texts = TEXT[lang].errors;
+  const fallback = cleanText(acc.error);
+  if (code === "unknown" && fallback === "ไม่พบข้อมูลโควตา Claude") return texts.quota_unavailable;
   if (code !== null && Object.prototype.hasOwnProperty.call(texts, code)) return texts[code];
-  return cleanText(acc.error);
+  return fallback;
 }
 
 // Everything a row needs about one account, in the given language.
@@ -402,6 +440,18 @@ function largeEntries(accounts, lang) {
   const room = Math.max(0, LAYOUT.large.maxRows - kept.length);
   const chosen = new Set(kept.concat(rest.slice(0, room)));
   const shown = entries.filter((e) => chosen.has(e));
+  // A group header goes above the first shown row of each group in a grouped account.
+  let currentModel = null;
+  let lastGroup = null;
+  shown.forEach((e) => {
+    if (e.m !== currentModel) {
+      currentModel = e.m;
+      lastGroup = null;
+    }
+    const group = e.lim ? e.lim.group : null;
+    e.groupStart = group !== null && group !== lastGroup ? group : null;
+    if (group !== null) lastGroup = group;
+  });
   // The first shown row of each account carries its error text.
   const seen = new Set();
   shown.forEach((e) => {
@@ -752,6 +802,22 @@ function addLargeRow(widget, e, info) {
   addGauge(row, pct);
 }
 
+// The header above a group of agy limits in the large widget: "Gemini", or "ส่วนเสริม" with its tag on the add-ons.
+function addGroupHeader(widget, group, lang) {
+  const t = TEXT[lang];
+  const row = addRow(widget, GROUP_HEADER_H);
+  const name = group === "gemini" ? t.groupGemini : group === "addon" ? t.groupAddons : t.groupOther;
+  style(row.addText(name), Font.semiboldSystemFont(GROUP_HEADER_FONT), TEXT_MUTED, 1);
+  if (group === "addon") {
+    row.addSpacer(6);
+    style(row.addText(t.groupAddonsTag), Font.systemFont(GROUP_HEADER_FONT), TEXT_MUTED, 1);
+  }
+  row.addSpacer(null);
+}
+
+const GROUP_HEADER_H = 14;
+const GROUP_HEADER_FONT = 10;
+
 // Large: a title row, the limit rows (at most five), a hairline and the footer.
 function buildLarge(widget, accounts, info) {
   const L = LAYOUT.large;
@@ -765,6 +831,7 @@ function buildLarge(widget, accounts, info) {
   addHairline(widget, 0);
   largeEntries(accounts, info.lang).forEach((e, i) => {
     if (i > 0) addHairline(widget, INDENT);
+    if (e.groupStart) addGroupHeader(widget, e.groupStart, info.lang);
     addLargeRow(widget, e, info);
   });
   widget.addSpacer(null);

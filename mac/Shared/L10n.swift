@@ -69,6 +69,10 @@ enum L10nKey: CaseIterable {
     case quit
     case openLogFolder
     case showMenuBarIcon
+    case showClaudeHeaderRing
+    case showCodexUsageRing
+    case claudeHeaderHint
+    case claudeHeaderAccessibility
     case notifyAt80And95
     case languageLabel
     case languageSystem
@@ -76,6 +80,7 @@ enum L10nKey: CaseIterable {
     case languageEnglish
     case almostOut
     case noData
+    case loading
     case noLimitData
     case allSystemsNormal
     case refreshing
@@ -94,6 +99,15 @@ enum L10nKey: CaseIterable {
     case addClaudeAccount
     case addCodexAccount
     case agyOneAccount
+    case agyGroupGemini
+    case agyGroupAddons
+    case agyGroupAddonsTag
+    case agyGroupOther
+    case agyShortModels5h
+    case agyShortModelsWeekly
+    case agyShortArgonWeekly
+    case agyShortClaudeGpt5h
+    case agyShortWeekly
     case sortLabel
     case sortManual
     case sortLowest
@@ -162,6 +176,14 @@ enum L10n {
             return pick("เปิดโฟลเดอร์ log", "Open log folder", language)
         case .showMenuBarIcon:
             return pick("แสดงไอคอนบนแถบเมนู", "Show menu bar icon", language)
+        case .showClaudeHeaderRing:
+            return pick("แสดงวงแหวนใน Claude Desktop", "Show ring in Claude Desktop", language)
+        case .showCodexUsageRing:
+            return pick("แสดงวงแหวนเหนือ Usage ใน Codex", "Show ring above Usage in Codex", language)
+        case .claudeHeaderHint:
+            return pick("แสดงข้างปุ่ม Session Rail ใน Claude Code ต้องอนุญาตการช่วยการเข้าถึง", "Appears beside Session Rail in Claude Code and requires Accessibility access.", language)
+        case .claudeHeaderAccessibility:
+            return pick("ขอสิทธิ์การช่วยการเข้าถึง", "Request Accessibility access", language)
         case .notifyAt80And95:
             return pick("แจ้งเตือนที่ 80% และ 95%", "Notify at 80% and 95%", language)
         case .languageLabel:
@@ -174,6 +196,8 @@ enum L10n {
             return "English"
         case .almostOut:
             return pick("ใกล้หมด", "Almost out", language)
+        case .loading:
+            return pick("กำลังโหลด", "Loading", language)
         case .noData:
             return pick("ยังไม่มีข้อมูล เปิด Mac ไว้", "No data yet. Keep your Mac on.", language)
         case .noLimitData:
@@ -216,6 +240,24 @@ enum L10n {
             return "Codex (ChatGPT)"
         case .agyOneAccount:
             return pick("agy มีบัญชีเดียว (ตามโควตาของ agy)", "agy has one account (its own limit)", language)
+        case .agyGroupGemini:
+            return "Gemini"
+        case .agyGroupAddons:
+            return pick("ส่วนเสริม", "Add-ons", language)
+        case .agyGroupAddonsTag:
+            return pick("ใช้โควตาแยก", "Separate quota", language)
+        case .agyGroupOther:
+            return pick("อื่นๆ", "Other", language)
+        case .agyShortModels5h:
+            return pick("โมเดล 5 ชม.", "Models 5h", language)
+        case .agyShortModelsWeekly:
+            return pick("โมเดล สัปดาห์", "Models Weekly", language)
+        case .agyShortArgonWeekly:
+            return pick("Argon สัปดาห์", "Argon Weekly", language)
+        case .agyShortClaudeGpt5h:
+            return pick("Claude & GPT 5 ชม.", "Claude & GPT 5h", language)
+        case .agyShortWeekly:
+            return pick("สัปดาห์", "Weekly", language)
         case .sortLabel:
             return pick("เรียงลำดับ", "Sort order", language)
         case .sortManual:
@@ -520,6 +562,8 @@ enum L10n {
             return pick("ถูกจำกัดการเรียกชั่วคราว", "Rate limited for now", language)
         case "server_error":
             return pick("เซิร์ฟเวอร์มีปัญหา", "Server error", language)
+        case "quota_unavailable":
+            return pick("ยังไม่มีข้อมูลโควตา", "Quota data unavailable", language)
         case "unknown":
             return pick("เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ", "Unknown error", language)
         default:
@@ -527,11 +571,13 @@ enum L10n {
         }
     }
 
-    /// The text for an account's error, the same rule as the iPhone widget. A code in the table shows its wording,
-    /// `unknown` included. Any other or missing code shows the Thai `error`, and nil when the file has none.
+    /// Recognize the old collector's Claude no-quota result as well as the current error codes.
     static func errorMessage(code: String?, fallback: String?, _ language: UILanguage) -> String? {
         let file = fallback.flatMap { $0.isEmpty ? nil : $0 }
         guard let code else { return file }
+        if code == "unknown", file == "ไม่พบข้อมูลโควตา Claude" {
+            return errorWording("quota_unavailable", language)
+        }
         if let wording = errorWording(code, language) {
             return wording
         }

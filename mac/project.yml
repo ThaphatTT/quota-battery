@@ -84,6 +84,8 @@ targets:
       - path: AIUsage/AppUsageInsights.swift
       - path: AIUsage/LocalPalette.swift
       - path: AIUsage/LocalMotion.swift
+      - path: AIUsage/FirstOpenMotion.swift
+      - path: AIUsage/MotionViews.swift
       - path: AIUsage/LocalBrandIcon.swift
       - path: AIUsage/LocalBatteryGauge.swift
       - path: AIUsage/LocalUsageBar.swift
@@ -102,6 +104,10 @@ targets:
       - path: AIUsage/MenuBarStatusItem.swift
       - path: AIUsage/TerminalLauncher.swift
       - path: AIUsage/LocalUsageRing.swift
+      - path: AIUsage/ClaudeHeaderQuota.swift
+      - path: AIUsage/CodexSidebarQuota.swift
+      - path: AIUsage/QuotaOverlayContent.swift
+      - path: AIUsage/QuotaOverlayTracker.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: local.aiusage.AIUsageTests

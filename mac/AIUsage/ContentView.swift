@@ -84,6 +84,12 @@ struct ContentView: View {
 
     @Environment(\.uiLanguage) private var language
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The cards have been shown once in this app session, so the first-open motion has been played (or is playing).
+    @State private var entered = false
+    /// How the cards entered: `slide` on the first appearance of the window in the app session, otherwise `none`.
+    @State private var intro: IntroStyle = .none
+
+    private var motion: MotionLevel { MotionLevel.resolve(reduceMotion: reduceMotion, snapshot: snapshot) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -104,12 +110,24 @@ struct ContentView: View {
             footer
         }
         .frame(minWidth: CardGridLayout.minimumWindowWidth, maxWidth: .infinity, minHeight: 420, maxHeight: .infinity)
+        .environment(\.motionLevel, motion)
+        .onAppear { decideIntro() }
+        .onChange(of: state.isLoaded) { _, _ in decideIntro() }
+    }
+
+    /// Plays the first-open motion once, when the real content first shows. Until the first read has finished, the
+    /// cards are not shown at all (the skeleton is).
+    private func decideIntro() {
+        guard state.isLoaded, !entered else { return }
+        let isFirst = snapshot ? false : FirstOpenTracker.shared.claim("window")
+        intro = IntroStyle.resolve(isFirst: isFirst, reduceMotion: reduceMotion, snapshot: snapshot)
+        entered = true
     }
 
     /// The window has a hidden title bar, so this row takes the place of the title bar. The traffic lights stay at the left.
     private var titleRow: some View {
         ZStack {
-            Text(L10n.text(.appName, language))
+            typedText(L10n.text(.appName, language), key: "window.title", motion: motion)
                 .font(.system(size: 13, weight: .semibold))
             HStack(spacing: 10) {
                 Spacer()
@@ -136,7 +154,15 @@ struct ContentView: View {
 
     @ViewBuilder
     private func cards(columns: Int) -> some View {
-        if state.accounts.isEmpty {
+        if !state.isLoaded {
+            SkeletonLoadingView(label: L10n.text(.loading, language), motion: motion) {
+                CardGrid(columns: columns, spacing: CardGridLayout.spacing) {
+                    ForEach(0..<2, id: \.self) { _ in
+                        SkeletonAccountCard()
+                    }
+                }
+            }
+        } else if state.accounts.isEmpty {
             AppNoDataView()
                 .frame(maxWidth: .infinity, minHeight: 300)
         } else {
@@ -154,6 +180,7 @@ struct ContentView: View {
                     )
                     .equatable()
                     .id(account.id.isEmpty ? "position-\(index)" : account.id)
+                    .modifier(FirstOpenReveal(shown: entered || snapshot, style: intro, index: index))
                 }
             }
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: columns)
@@ -183,7 +210,7 @@ struct ContentView: View {
             Circle()
                 .fill(line.tone.color)
                 .frame(width: 7, height: 7)
-            Text(line.text)
+            Text(state.isLoaded ? line.text : L10n.text(.loading, language))
                 .font(.system(size: 12))
                 .foregroundStyle(line.tone == .warning ? LocalPalette.warning : Color.secondary)
                 .lineLimit(1)

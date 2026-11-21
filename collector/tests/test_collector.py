@@ -544,7 +544,7 @@ class ParsingTests(Base):
         limits = m.group_agy_models(AGY_MODELS_BODY["models"])
         by_key = {limit["key"]: limit for limit in limits}
         self.assertEqual([limit["key"] for limit in limits],
-                         ["claude", "gemini_pro", "gemini_flash", "gpt_oss"])
+                         ["gemini_pro", "gemini_flash", "claude", "gpt_oss"])  # Gemini group first
         self.assertEqual(by_key["claude"]["used_percent"], 50.0)
         self.assertEqual(by_key["claude"]["resets_at"], "2026-11-19T09:21:41Z")
         self.assertEqual(by_key["gemini_flash"]["used_percent"], 25.0)
@@ -1000,7 +1000,7 @@ class OutputAndRunTests(Base):
         self.assertEqual([account["status"] for account in doc["accounts"]], ["ok", "ok", "ok"])
         self.assertEqual(doc["accounts"][1]["limits"][0]["label"], "สัปดาห์")
         self.assertEqual([limit["key"] for limit in doc["accounts"][2]["limits"]],
-                         ["gemini-weekly", "gemini-5h", "3p-weekly"])
+                         ["gemini-5h", "gemini-weekly", "3p-weekly"])
 
     def test_missing_icloud_folder_is_skipped_and_not_created(self):
         code, _ = self.run_main([])
@@ -1503,6 +1503,58 @@ class GptUsageTests(Base):
         self.assertEqual(prices["gpt-6.1-sol"]["provider"], "openai")
         for model in ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-2"):
             self.assertEqual(prices[model]["provider"], "anthropic")
+
+
+class AgyGroupTests(unittest.TestCase):
+    """agy limits carry a display group (gemini, addon, other) and come in display order."""
+
+    def bucket_groups(self, buckets):
+        return [{"name": "fixture", "buckets": buckets}]
+
+    def test_known_cli_keys_come_in_the_display_order_with_their_labels_and_groups(self):
+        groups = self.bucket_groups([
+            agy_bucket("3p-weekly", "x", "weekly", 0.5, "2026-11-24T02:00:00Z"),
+            agy_bucket("gemini-argon-wtu-weekly", "x", "weekly", 0.5, "2026-11-24T02:00:00Z"),
+            agy_bucket("3p-5h", "x", "5h", 0.5, "2026-11-19T09:00:00Z"),
+            agy_bucket("gemini-weekly", "x", "weekly", 0.5, "2026-11-24T02:00:00Z"),
+            agy_bucket("gemini-5h", "x", "5h", 0.5, "2026-11-19T09:00:00Z")])
+        limits = m.agy_cli_limits(groups)
+        self.assertEqual([limit["key"] for limit in limits],
+                         ["gemini-5h", "gemini-weekly", "gemini-argon-wtu-weekly", "3p-5h", "3p-weekly"])
+        self.assertEqual([limit["label"] for limit in limits],
+                         ["Gemini Models · 5h", "Gemini Models · Weekly", "Gemini Argon · Weekly",
+                          "Claude & GPT · 5h", "Claude & GPT · Weekly"])
+        self.assertEqual([limit["group"] for limit in limits], ["gemini", "gemini", "gemini", "addon", "addon"])
+        self.assertTrue(all(limit["window_seconds"] is None for limit in limits))
+
+    def test_unknown_keys_follow_their_group_prefix_and_others_come_last(self):
+        groups = self.bucket_groups([
+            agy_bucket("zz-new", "Mystery", "weekly", 0.5, "2026-11-24T02:00:00Z"),
+            agy_bucket("3p-new", "Claude thing", "5h", 0.5, "2026-11-19T09:00:00Z"),
+            agy_bucket("gemini-new-5h", "Gemini new", "5h", 0.5, "2026-11-19T09:00:00Z"),
+            agy_bucket("gemini-weekly", "x", "weekly", 0.5, "2026-11-24T02:00:00Z")])
+        limits = m.agy_cli_limits(groups)
+        self.assertEqual([limit["key"] for limit in limits],
+                         ["gemini-weekly", "gemini-new-5h", "3p-new", "zz-new"])
+        self.assertEqual([limit["group"] for limit in limits], ["gemini", "gemini", "addon", "other"])
+        self.assertEqual(limits[1]["label"], "fixture · 5h")  # unknown key keeps the label the CLI gave
+
+    def test_direct_mode_models_are_grouped_gemini_first(self):
+        limits = m.group_agy_models({
+            "claude-opus": {"quotaInfo": {"remainingFraction": 0.5, "resetTime": "2026-11-19T09:21:41Z"}},
+            "gpt-oss-120b": {"quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T09:21:41Z"}},
+            "gemini-3-flash": {"quotaInfo": {"remainingFraction": 0.75, "resetTime": "2026-11-19T09:21:41Z"}},
+            "gemini-3-pro": {"quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T09:21:41Z"}}})
+        self.assertEqual([limit["key"] for limit in limits],
+                         ["gemini_pro", "gemini_flash", "claude", "gpt_oss"])
+        self.assertEqual([limit["group"] for limit in limits], ["gemini", "gemini", "addon", "addon"])
+
+    def test_the_group_field_is_always_one_of_three_values(self):
+        groups = self.bucket_groups([agy_bucket("", "x", "5h", 0.5, "2026-11-19T09:00:00Z")])
+        limits = m.agy_cli_limits(groups)
+        self.assertEqual({limit["group"] for limit in limits}, {"other"})
+        self.assertEqual({m.agy_limit_group(key) for key in ("tab_x", "gemini_pro", "3p-5h")},
+                         {"other", "gemini", "addon"})
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ struct QuotaOverlayAnchor: Equatable {
 }
 
 struct QuotaOverlayGate {
-    enum Decision: Equatable { case hidden, confirming, show, keepShowing }
+    enum Decision: Equatable { case hidden, confirming, show, move, keepShowing }
 
     private var candidate: QuotaOverlayAnchor?
     private var presented: QuotaOverlayAnchor?
@@ -27,12 +27,17 @@ struct QuotaOverlayGate {
         presented = nil
     }
 
-    mutating func check(_ anchor: QuotaOverlayAnchor?) -> Decision {
+    mutating func check(_ anchor: QuotaOverlayAnchor?, followsMovement: Bool = false) -> Decision {
         guard let anchor else {
             reset()
             return .hidden
         }
         if presented == anchor { return .keepShowing }
+        if followsMovement, let previous = presented,
+           previous.windowID == anchor.windowID, previous.surface == anchor.surface {
+            presented = anchor
+            return .move
+        }
         if candidate == anchor {
             presented = anchor
             candidate = nil
@@ -64,6 +69,7 @@ final class QuotaOverlayTracker {
     private let bundleID: String
     private let isEnabled: () -> Bool
     private let locate: (pid_t) -> QuotaOverlayLocation?
+    private let followsWindowMovement: Bool
     private let closePopover: () -> Void
     private var gate = QuotaOverlayGate()
     private var revision: UInt64 = 0
@@ -76,18 +82,29 @@ final class QuotaOverlayTracker {
     private var observedPID: pid_t?
     private var observedWindow: AXUIElement?
     private var lastStatus: String?
+    private static let windowGeometryEvents = [
+        kAXMovedNotification, kAXResizedNotification, kAXWindowMovedNotification, kAXWindowResizedNotification
+    ]
     private static let windowEvents = [
         kAXMovedNotification, kAXResizedNotification, kAXWindowMiniaturizedNotification,
         kAXWindowDeminiaturizedNotification, kAXUIElementDestroyedNotification
     ]
 
+    private var observedWindowEvents: [String] {
+        followsWindowMovement
+            ? Self.windowEvents + [kAXWindowMovedNotification, kAXWindowResizedNotification]
+            : Self.windowEvents
+    }
+
     init(panel: NSPanel, visibility: QuotaOverlayVisibility, bundleID: String, isEnabled: @escaping () -> Bool,
-         locate: @escaping (pid_t) -> QuotaOverlayLocation?, closePopover: @escaping () -> Void) {
+         locate: @escaping (pid_t) -> QuotaOverlayLocation?, followsWindowMovement: Bool = false,
+         closePopover: @escaping () -> Void) {
         self.panel = panel
         self.visibility = visibility
         self.bundleID = bundleID
         self.isEnabled = isEnabled
         self.locate = locate
+        self.followsWindowMovement = followsWindowMovement
         self.closePopover = closePopover
 
         let workspace = NSWorkspace.shared.notificationCenter
@@ -126,7 +143,7 @@ final class QuotaOverlayTracker {
             return
         }
         if timer == nil {
-            let timer = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in
+            let timer = Timer(timeInterval: followsWindowMovement ? 0.18 : 0.4, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.probe() }
             }
             RunLoop.main.add(timer, forMode: .common)
@@ -164,7 +181,9 @@ final class QuotaOverlayTracker {
             let frame = location.flatMap {
                 QuotaOverlayAnchor.screenFrame(for: $0.anchor.frame, screens: NSScreen.screens.map(\.frame))
             }
-            switch gate.check(frame == nil ? nil : location?.anchor) {
+            let label = location?.placementLabel
+            let follows = followsWindowMovement && (label == "sessionRail" || label == "codexUsage")
+            switch gate.check(frame == nil ? nil : location?.anchor, followsMovement: follows) {
             case .hidden:
                 report(location == nil ? "anchor unavailable" : "anchor offscreen")
                 hide()
@@ -178,6 +197,16 @@ final class QuotaOverlayTracker {
                 }
             case .show:
                 if let frame { show(frame: frame, pid: pid, revision: check, placementLabel: location?.placementLabel) }
+            case .move:
+                if let frame {
+                    panel.setFrame(frame, display: true)
+                    if !matchesPanel(frame) {
+                        gate.reset()
+                        hide()
+                    } else {
+                        report("following \(label ?? "anchor") (frame verified)")
+                    }
+                }
             case .keepShowing:
                 break
             }
@@ -200,9 +229,7 @@ final class QuotaOverlayTracker {
         DispatchQueue.main.async { [weak self] in
             guard let self, revision == check, targetPID == pid, visibility.presentation != nil else { return }
             if let placementLabel {
-                let actual = panel.frame
-                guard abs(actual.minX - frame.minX) <= 0.5, abs(actual.minY - frame.minY) <= 0.5,
-                      abs(actual.width - frame.width) <= 0.5, abs(actual.height - frame.height) <= 0.5 else {
+                guard matchesPanel(frame) else {
                     gate.reset()
                     hide()
                     report("panel frame differs from \(placementLabel)")
@@ -216,6 +243,12 @@ final class QuotaOverlayTracker {
         }
     }
 
+    private func matchesPanel(_ expected: CGRect) -> Bool {
+        let actual = panel.frame
+        return abs(actual.minX - expected.minX) <= 0.5 && abs(actual.minY - expected.minY) <= 0.5
+            && abs(actual.width - expected.width) <= 0.5 && abs(actual.height - expected.height) <= 0.5
+    }
+
     private func hide() {
         guard panel.isVisible || visibility.presentation != nil else { return }
         panel.alphaValue = 0
@@ -227,10 +260,17 @@ final class QuotaOverlayTracker {
     private func observe(pid: pid_t, window: AXUIElement?) {
         if observer == nil {
             var result: AXObserver?
-            let status = AXObserverCreate(pid, { _, _, _, context in
+            let status = AXObserverCreate(pid, { _, _, notification, context in
                 guard let context else { return }
                 let tracker = Unmanaged<QuotaOverlayTracker>.fromOpaque(context).takeUnretainedValue()
-                MainActor.assumeIsolated { tracker.contextChanged() }
+                MainActor.assumeIsolated {
+                    let name = notification as String
+                    if tracker.followsWindowMovement, QuotaOverlayTracker.windowGeometryEvents.contains(name) {
+                        tracker.probe()
+                    } else {
+                        tracker.contextChanged()
+                    }
+                }
             }, &result)
             guard status == .success, let result else { return }
             observer = result
@@ -244,12 +284,12 @@ final class QuotaOverlayTracker {
         guard let observer, let window else { return }
         if let observedWindow, CFEqual(observedWindow, window) { return }
         if let observedWindow {
-            for event in Self.windowEvents {
+            for event in observedWindowEvents {
                 AXObserverRemoveNotification(observer, observedWindow, event as CFString)
             }
         }
         observedWindow = window
-        for event in Self.windowEvents {
+        for event in observedWindowEvents {
             AXObserverAddNotification(observer, window, event as CFString, Unmanaged.passUnretained(self).toOpaque())
         }
     }

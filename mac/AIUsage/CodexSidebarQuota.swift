@@ -65,12 +65,13 @@ struct CodexSidebarQuota {
     }
 }
 
-struct CodexQuotaDetails: View {
+struct DesktopQuotaDetails: View {
     @ObservedObject var model: UsageViewModel
+    @ObservedObject var presentation: DesktopPopoverPresentation
     @AppStorage(CodexSidebarQuota.accountKey) private var preferredID = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var revealed = false
     let onOpenApp: () -> Void
+    let onQuit: () -> Void
 
     var body: some View {
         let accounts = model.result.document?.accounts ?? []
@@ -104,18 +105,23 @@ struct CodexQuotaDetails: View {
                 .padding(.trailing, 3)
             }
             .frame(minHeight: 70, maxHeight: 330)
-            .opacity(revealed ? 1 : 0)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.2).delay(0.06), value: revealed)
 
             Divider()
-            Button(L10n.text(.openApp, language), action: onOpenApp)
+            HStack {
+                Button(L10n.text(.refresh, language)) { model.refresh() }
+                    .disabled(model.isRefreshing)
+                Spacer()
+                Button(L10n.text(.openApp, language), action: onOpenApp)
+                Button(L10n.text(.quit, language), action: onQuit)
+            }
                 .buttonStyle(.link)
-                .opacity(revealed ? 1 : 0)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.2).delay(0.14), value: revealed)
         }
         .padding(14)
-        .frame(width: 294, alignment: .leading)
-        .onAppear { revealed = true }
+        .frame(width: 300, alignment: .leading)
+        .opacity(presentation.isRevealed ? 1 : 0)
+        .scaleEffect(presentation.isRevealed || reduceMotion ? 1 : 0.985, anchor: .top)
+        .animation(.easeOut(duration: DesktopPopoverPresentation.duration), value: presentation.isRevealed)
+        .allowsHitTesting(presentation.isRevealed)
     }
 
     private func accountRows(_ account: UsageAccount, language: UILanguage) -> some View {
@@ -124,7 +130,9 @@ struct CodexQuotaDetails: View {
             Label(CodexSidebarQuota.name(account), systemImage: "circle.fill")
                 .foregroundStyle(Color(hex: ProviderStyle.accentHex(for: account.provider)))
                 .font(.subheadline.weight(.semibold))
-            if periods.isEmpty {
+            if let reason = L10n.errorMessage(code: account.errorCode, fallback: account.error, language) {
+                Text(reason).font(.caption).foregroundStyle(.secondary)
+            } else if periods.isEmpty {
                 Text(L10n.text(.noLimitData, language)).foregroundStyle(.secondary)
             }
             ForEach(periods.indices, id: \.self) { index in

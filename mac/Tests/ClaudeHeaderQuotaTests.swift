@@ -3,6 +3,17 @@ import XCTest
 final class ClaudeHeaderQuotaTests: XCTestCase {
     private let primary = CGRect(x: 0, y: 0, width: 1920, height: 1080)
 
+    func testTemporaryMenuHidesAndRestoresTheExactClaudeAnchor() throws {
+        var layout = ClaudeHeaderQuota.Layout()
+        let window = CGRect(x: 100, y: 200, width: 900, height: 600)
+        let rail = CGRect(x: 925, y: 210, width: 28, height: 28)
+        let original = try XCTUnwrap(layout.placement(windowID: 1, window: window, rail: rail,
+                                                      isNewSession: false, controls: []))
+        let menu = CGRect(x: original.frame.midX, y: 206, width: 180, height: 140)
+        XCTAssertNil(layout.placement(windowID: 1, window: window, rail: rail, isNewSession: false, controls: [menu]))
+        XCTAssertEqual(layout.placement(windowID: 1, window: window, rail: rail, isNewSession: false, controls: []), original)
+    }
+
     func testPlacementMatrixKeepsTheRailAnchorOnEachWindowAndDisplay() throws {
         let fixtures: [(name: String, window: CGRect, display: CGRect)] = [
             ("regular", CGRect(x: 90, y: 100, width: 1100, height: 760), primary),
@@ -111,5 +122,33 @@ final class ClaudeHeaderQuotaTests: XCTestCase {
                              CGRect(x: 870, y: 90, width: 28, height: 28)]
         XCTAssertEqual(ClaudeHeaderQuota.rail(in: otherControls + [rail], window: window), rail)
         XCTAssertEqual(ClaudeHeaderQuota.rail(in: [rail] + otherControls, window: window), rail)
+    }
+
+    func testRailFollowsTheChatPaneToTheLeftOfTheWindowMidpoint() throws {
+        let window = CGRect(x: 0, y: 0, width: 1500, height: 900)
+        var layout = ClaudeHeaderQuota.Layout()
+        var gate = QuotaOverlayGate()
+        for (index, paneWidth) in [1200.0, 740, 520, 610].enumerated() {
+            let toolbar = CGRect(x: 40, y: 8, width: paneWidth, height: 40)
+            let rail = CGRect(x: toolbar.maxX - 115, y: 15, width: 28, height: 28)
+            let unrelated = CGRect(x: 1400, y: 15, width: 28, height: 28)
+            XCTAssertEqual(ClaudeHeaderQuota.rail(in: [unrelated, rail], window: window, toolbar: toolbar), rail)
+            let position = try XCTUnwrap(layout.placement(windowID: 1, window: window, rail: rail,
+                                                           isNewSession: false, controls: [rail]))
+            XCTAssertEqual(rail.minX - position.frame.maxX, ClaudeHeaderQuota.railGap)
+            XCTAssertEqual(position.frame.midY, rail.midY)
+            let anchor = QuotaOverlayAnchor(frame: position.frame, windowID: 1, surface: "sessionRail:chat")
+            if index == 0 {
+                XCTAssertEqual(gate.check(anchor, followsMovement: true), .confirming)
+                XCTAssertEqual(gate.check(anchor, followsMovement: true), .show)
+            } else {
+                XCTAssertEqual(gate.check(anchor, followsMovement: true), .move)
+            }
+        }
+        let anotherChat = QuotaOverlayAnchor(frame: CGRect(x: 320, y: 20, width: 68, height: 36),
+                                             windowID: 1, surface: "sessionRail:another")
+        XCTAssertEqual(gate.check(anotherChat, followsMovement: true), .confirming)
+        XCTAssertEqual(gate.check(anotherChat, followsMovement: true), .show)
+        XCTAssertEqual(gate.check(nil, followsMovement: true), .hidden)
     }
 }

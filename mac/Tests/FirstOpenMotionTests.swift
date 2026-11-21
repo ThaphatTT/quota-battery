@@ -19,6 +19,50 @@ final class FirstOpenMotionTests: XCTestCase {
         XCTAssertTrue(FirstOpenTracker().claim("window"), "a new launch (a new tracker) plays the first appearance again")
     }
 
+    func testDesktopPopoverReplaysTheEntranceAfterEachFullDismissal() {
+        let presentation = DesktopPopoverPresentation()
+        for _ in 0..<3 {
+            XCTAssertEqual(presentation.toggle(), .mount)
+            XCTAssertFalse(presentation.isRevealed)
+            presentation.didShow()
+            XCTAssertTrue(presentation.isRevealed)
+            XCTAssertEqual(presentation.toggle(), .dismiss)
+            XCTAssertFalse(presentation.isRevealed)
+            presentation.reset()
+        }
+    }
+
+    func testSecondClickOnTheDesktopRingClosesEvenBeforeTheEntranceFinishes() {
+        let presentation = DesktopPopoverPresentation()
+        XCTAssertEqual(presentation.toggle(), .mount)
+        XCTAssertEqual(presentation.toggle(), .dismiss)
+        presentation.didShow()
+        XCTAssertEqual(presentation.phase, .closing)
+        XCTAssertFalse(presentation.isRevealed)
+    }
+
+    func testDesktopPopoverReversesDismissalImmediatelyOnRapidClick() {
+        let presentation = DesktopPopoverPresentation()
+        XCTAssertEqual(presentation.toggle(), .mount)
+        presentation.didShow()
+        XCTAssertEqual(presentation.toggle(), .dismiss)
+        XCTAssertEqual(presentation.toggle(), .reverseDismissal)
+        XCTAssertTrue(presentation.isRevealed)
+        XCTAssertEqual(presentation.toggle(), .dismiss)
+    }
+
+    func testDesktopPopoverIgnoresStaleShowAndDismissesOutsideOnlyOnce() {
+        let presentation = DesktopPopoverPresentation()
+        XCTAssertEqual(presentation.toggle(), .mount)
+        XCTAssertTrue(presentation.beginClosing())
+        XCTAssertFalse(presentation.beginClosing())
+        presentation.didShow()
+        XCTAssertEqual(presentation.phase, .closing)
+        presentation.reset()
+        presentation.didShow()
+        XCTAssertEqual(presentation.phase, .hidden)
+    }
+
     func testTheIntroStyleIsSlideOnTheFirstAppearanceWithMotion() {
         XCTAssertEqual(IntroStyle.resolve(isFirst: true, reduceMotion: false, snapshot: false), .slide)
     }

@@ -16,7 +16,7 @@ final class ClaudeHeaderRing {
     private var defaultsObservation: NSKeyValueObservation?
 
     init(model: UsageViewModel, openMainWindow: @escaping () -> Void) {
-        usagePopover = UsagePopoverController(model: model, openMainWindow: openMainWindow)
+        usagePopover = UsagePopoverController(model: model, openMainWindow: openMainWindow, desktop: true)
         let visibility = QuotaOverlayVisibility()
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
@@ -26,7 +26,7 @@ final class ClaudeHeaderRing {
         panel.isExcludedFromWindowsMenu = true
         panel.isReleasedWhenClosed = false
 
-        let button = NSHostingView(rootView: QuotaOverlayButton(model: model, visibility: visibility, layout: .header) { [weak self] in
+        let button = QuotaOverlayHostingView(rootView: QuotaOverlayButton(model: model, visibility: visibility, layout: .header) { [weak self] in
             guard let self, let button = panel.contentView else { return }
             usagePopover.toggle(relativeTo: button, edge: .minY, activateApp: false)
         })
@@ -35,13 +35,17 @@ final class ClaudeHeaderRing {
 
         tracker = QuotaOverlayTracker(panel: panel, visibility: visibility, bundleID: "com.anthropic.claudefordesktop",
                                       isEnabled: { UserDefaults.standard.showClaudeHeaderRing },
-                                      locate: ClaudeSessionToolbar().locate) { [weak usagePopover] in
+                                      locate: ClaudeSessionToolbar().locate, followsWindowMovement: true) { [weak usagePopover] in
             usagePopover?.close(immediately: true)
         }
         defaultsObservation = UserDefaults.standard.observe(\.showClaudeHeaderRing, options: [.new]) { [weak self] _, _ in
             Task { @MainActor in self?.tracker?.contextChanged() }
         }
     }
+}
+
+final class QuotaOverlayHostingView: NSHostingView<QuotaOverlayButton> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 private final class RingPanel: NSPanel {
@@ -61,7 +65,8 @@ private final class ClaudeSessionToolbar {
     private static let buttonRoles = [kAXButtonRole, kAXCheckBoxRole, kAXMenuButtonRole, "AXToggle", "AXToggleButton"]
 
     private static let interactiveRoles = buttonRoles + [
-        kAXPopUpButtonRole, kAXTextFieldRole, kAXTextAreaRole, "AXLink"
+        kAXPopUpButtonRole, kAXTextFieldRole, kAXTextAreaRole, "AXLink",
+        kAXMenuRole, kAXMenuItemRole, "AXPopover", "AXSheet", "AXDialog", "AXTooltip"
     ]
     private static let newSessionNames = ["New session", "New Code Session", "New Claude Code Session", "Start a new session",
                                           "New chat", "Start a new chat", "What would you like to work on?"]
@@ -91,8 +96,14 @@ private final class ClaudeSessionToolbar {
             Self.role(of: $0) == kAXToolbarRole && Self.hasName("Session tools", element: $0)
         }
         let toolbarNodes = sessionToolbar.map { Self.descendants(of: $0, limit: 48) } ?? []
-        let controls = Self.interactiveFrames(in: nodes + toolbarNodes, nearTopOf: windowFrame)
-        let rail = Self.railFrame(in: toolbarNodes, window: windowFrame) ?? Self.railFrame(in: nodes, window: windowFrame)
+        var visibleNodes = nodes + toolbarNodes
+        if let focusedItem: AXUIElement = Self.attribute(kAXFocusedUIElementAttribute, in: app) {
+            visibleNodes.append(focusedItem)
+        }
+        let controls = Self.interactiveFrames(in: visibleNodes, nearTopOf: windowFrame)
+        let toolbarFrame = sessionToolbar.flatMap { Self.frame(of: $0) }
+        let rail = Self.railFrame(in: toolbarNodes, window: windowFrame, toolbar: toolbarFrame)
+            ?? Self.railFrame(in: nodes, window: windowFrame)
         let isNew = rail == nil && (route.map(ClaudeHeaderQuota.isNewSessionURL) == true
             || nodes.contains { Self.isNewSessionContent($0, in: windowFrame) })
         guard let position = layout.placement(windowID: CFHash(window), window: windowFrame, rail: rail,
@@ -114,7 +125,7 @@ private final class ClaudeSessionToolbar {
             && frame(of: node).map { window.contains($0) && $0.midX >= window.minX + window.width * 0.35 } == true
     }
 
-    private static func railFrame(in nodes: [AXUIElement], window: CGRect) -> CGRect? {
+    private static func railFrame(in nodes: [AXUIElement], window: CGRect, toolbar: CGRect? = nil) -> CGRect? {
         let candidates = nodes.compactMap { node -> CGRect? in
             guard buttonRoles.contains(role(of: node)),
                   attribute("AXHidden", in: node) as Bool? != true,
@@ -125,7 +136,7 @@ private final class ClaudeSessionToolbar {
                   }) else { return nil }
             return frame(of: node)
         }
-        return ClaudeHeaderQuota.rail(in: candidates, window: window)
+        return ClaudeHeaderQuota.rail(in: candidates, window: window, toolbar: toolbar)
     }
 
     private static func interactiveFrames(in nodes: [AXUIElement], nearTopOf window: CGRect) -> [CGRect] {

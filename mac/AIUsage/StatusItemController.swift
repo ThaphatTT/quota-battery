@@ -84,73 +84,137 @@ final class StatusItemController: NSObject {
 final class UsagePopoverController: NSObject, NSPopoverDelegate {
     private let model: UsageViewModel
     private let openMainWindow: () -> Void
+    private let desktop: Bool
     private let popover = NSPopover()
-    /// A transient popover can close on the anchor's mouse-down before the toggle's mouse-up.
+    private let presentation = DesktopPopoverPresentation()
+    private weak var positioningView: NSView?
+    private var dismissal: Task<Void, Never>?
+    /// The macOS menu-bar popover can dismiss on the anchor's mouse-down before its mouse-up.
     private var lastClosedAt: Date?
 
-    init(model: UsageViewModel, openMainWindow: @escaping () -> Void) {
+    init(model: UsageViewModel, openMainWindow: @escaping () -> Void, desktop: Bool = false) {
         self.model = model
         self.openMainWindow = openMainWindow
+        self.desktop = desktop
         super.init()
         popover.behavior = .transient
+        popover.animates = !desktop
         popover.delegate = self
     }
 
     func close(immediately: Bool = false) {
-        guard popover.isShown else { return }
         if immediately {
+            dismissal?.cancel()
+            dismissal = nil
+            presentation.reset()
+            guard popover.isShown else { return }
             let animates = popover.animates
             popover.animates = false
             popover.close()
             popover.animates = animates
-        } else {
+        } else if desktop {
+            if presentation.beginClosing() { finishAfterAnimation() }
+        } else if popover.isShown {
             popover.performClose(nil)
         }
     }
 
-    func toggle(relativeTo button: NSView, edge: NSRectEdge, activateApp: Bool,
-                makeContent: (() -> NSViewController)? = nil) {
+    func toggle(relativeTo button: NSView, edge: NSRectEdge, activateApp: Bool) {
+        if desktop {
+            guard button.window?.isVisible == true else { return }
+            switch presentation.toggle() {
+            case .mount:
+                show(relativeTo: button, edge: edge, activateApp: activateApp)
+            case .dismiss:
+                finishAfterAnimation()
+            case .reverseDismissal:
+                dismissal?.cancel()
+                dismissal = nil
+            }
+            return
+        }
         if popover.isShown {
             close()
             return
         }
-        if let lastClosedAt, Date().timeIntervalSince(lastClosedAt) < 0.3 {
-            return
+        if let lastClosedAt, Date().timeIntervalSince(lastClosedAt) < 0.3 { return }
+        show(relativeTo: button, edge: edge, activateApp: activateApp)
+    }
+
+    private func finishAfterAnimation() {
+        dismissal?.cancel()
+        dismissal = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(DesktopPopoverPresentation.duration)) } catch { return }
+            guard !Task.isCancelled, let self, self.presentation.phase == .closing else { return }
+            self.dismissal = nil
+            self.presentation.reset()
+            self.popover.close()
         }
-        let content = makeContent?() ?? makeContentController()
+    }
+
+    private func show(relativeTo button: NSView, edge: NSRectEdge, activateApp: Bool) {
+        let content = makeContentController()
+        positioningView = button
         popover.contentViewController = content
         let size = content.view.fittingSize
         if size.width > 0, size.height > 0 {
             popover.contentSize = size
         }
-        if activateApp {
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        if activateApp { NSApp.activate(ignoringOtherApps: true) }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: edge)
+        if desktop, !popover.isShown {
+            presentation.reset()
+            popover.contentViewController = nil
+            positioningView = nil
+        }
     }
 
-    /// A new hosting controller for each opening, so the rows fade in again every time the popover opens.
     private func makeContentController() -> NSViewController {
-        let host = NSHostingController(
-            rootView: MenuBarPopoverHost(
-                model: model,
-                onOpenApp: { [weak self] in
-                    self?.close()
-                    self?.openMainWindow()
-                },
-                onQuit: {
-                    NSApp.terminate(nil)
-                }
-            )
-        )
+        let openApp: () -> Void = { [weak self] in
+            guard let self else { return }
+            self.close(immediately: self.desktop)
+            self.openMainWindow()
+        }
+        let quit: () -> Void = { NSApplication.shared.terminate(nil) }
+        if desktop {
+            let host = NSHostingController(rootView: DesktopQuotaDetails(model: model, presentation: presentation,
+                                                                         onOpenApp: openApp, onQuit: quit))
+            host.sizingOptions = [.preferredContentSize]
+            return host
+        }
+        let host = NSHostingController(rootView: MenuBarPopoverHost(model: model, onOpenApp: openApp, onQuit: quit))
         host.sizingOptions = [.preferredContentSize]
         return host
     }
 
+    func popoverShouldClose(_ popover: NSPopover) -> Bool {
+        guard desktop, presentation.phase != .hidden else { return true }
+        // The overlay's button owns its click. Outside dismissal and Escape still fade out.
+        if let view = positioningView, let window = view.window {
+            let mouse = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+            let release = NSApp.currentEvent?.type == .leftMouseUp && NSApp.currentEvent?.window === window
+            if (NSEvent.pressedMouseButtons & 1 != 0 || release),
+               view.bounds.contains(view.convert(mouse, from: nil)) { return false }
+        }
+        close()
+        return false
+    }
+
+    func popoverDidShow(_ notification: Notification) {
+        guard desktop, let content = popover.contentViewController else { return }
+        DispatchQueue.main.async { [weak self, weak content] in
+            guard let self, let content, self.popover.contentViewController === content else { return }
+            self.presentation.didShow()
+        }
+    }
+
     func popoverDidClose(_ notification: Notification) {
         lastClosedAt = Date()
-        // The closed popover's views would still follow the model, so they are let go until the next opening.
+        dismissal?.cancel()
+        dismissal = nil
+        presentation.reset()
         popover.contentViewController = nil
+        positioningView = nil
     }
 }
 

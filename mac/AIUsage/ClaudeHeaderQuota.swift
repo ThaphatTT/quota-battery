@@ -64,10 +64,11 @@ enum ClaudeHeaderQuota {
         ].contains(name)
     }
 
-    static func rail(in candidates: [CGRect], window: CGRect) -> CGRect? {
+    static func rail(in candidates: [CGRect], window: CGRect, toolbar: CGRect? = nil) -> CGRect? {
         candidates.filter {
             !$0.isEmpty && window.contains($0) && $0.width <= 72 && $0.height <= 52
-                && $0.midX > window.midX && $0.midY < window.minY + 120
+                && (toolbar?.contains(CGPoint(x: $0.midX, y: $0.midY)) ?? ($0.midX > window.midX))
+                && $0.midY < window.minY + 120
         }.max { ($0.maxX, -$0.midY) < ($1.maxX, -$1.midY) }
     }
 

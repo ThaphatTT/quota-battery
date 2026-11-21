@@ -8,8 +8,7 @@ struct MenuBarPopoverView: View {
     let onQuit: () -> Void
 
     @State private var revealed: Bool
-    /// How the rows enter. Nil until the rows are first shown; then `slide` the first time the popover opens in the app
-    /// session, and `none` after that, so a later opening draws at once.
+    /// Nil until this presentation has decided how to reveal its rows.
     @State private var intro: IntroStyle?
     @State private var hovered: Int?
     @State private var quitHovered = false
@@ -65,15 +64,18 @@ struct MenuBarPopoverView: View {
         }
         .frame(width: 300)
         .environment(\.motionLevel, motion)
-        .onAppear { decideIntro() }
-        .onChange(of: state.isLoaded) { _, _ in decideIntro() }
+        .task(id: state.isLoaded) { await revealRows() }
     }
 
-    /// Shows the rows once the first read has finished. The first opening of the popover in the app session plays the
-    /// first-open motion; later openings show the rows at once.
-    private func decideIntro() {
+    private func revealRows() async {
         guard state.isLoaded, intro == nil else { return }
-        intro = IntroStyle.resolve(isFirst: FirstOpenTracker.shared.claim("popover"), reduceMotion: reduceMotion, snapshot: false)
+        let style = IntroStyle.resolve(isFirst: FirstOpenTracker.shared.claim("popover"),
+                                       reduceMotion: reduceMotion, snapshot: false)
+        intro = style
+        if style != .none {
+            // Commit the hidden row layout before animating it into view.
+            do { try await Task.sleep(for: .milliseconds(30)) } catch { return }
+        }
         revealed = true
     }
 
@@ -199,7 +201,7 @@ struct PopoverAccountRow: View {
     let revealed: Bool
     let isHovered: Bool
     let reduceMotion: Bool
-    /// How the row enters: `slide` on the popover's first opening in the app session, `none` after that.
+    /// The entrance selected for this presentation.
     var intro: IntroStyle = .none
     @Environment(\.motionLevel) private var motion
     @Environment(\.uiLanguage) private var language

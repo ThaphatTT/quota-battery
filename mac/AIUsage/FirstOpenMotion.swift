@@ -38,6 +38,44 @@ final class FirstOpenTracker {
     func claim(_ id: String) -> Bool {
         seen.insert(id).inserted
     }
+
+}
+
+@MainActor
+final class DesktopPopoverPresentation: ObservableObject {
+    enum Phase: Equatable { case hidden, opening, open, closing }
+    enum Action: Equatable { case mount, dismiss, reverseDismissal }
+
+    static let duration: TimeInterval = 0.12
+    @Published private(set) var phase: Phase = .hidden
+
+    var isRevealed: Bool { phase == .open }
+
+    func toggle() -> Action {
+        switch phase {
+        case .hidden:
+            phase = .opening
+            return .mount
+        case .opening, .open:
+            phase = .closing
+            return .dismiss
+        case .closing:
+            phase = .open
+            return .reverseDismissal
+        }
+    }
+
+    func didShow() {
+        if phase == .opening { phase = .open }
+    }
+
+    func beginClosing() -> Bool {
+        guard phase == .opening || phase == .open else { return false }
+        phase = .closing
+        return true
+    }
+
+    func reset() { phase = .hidden }
 }
 
 /// Whether the first usage.json read has finished. Until it has, the views show a skeleton, not "no data". A later read,

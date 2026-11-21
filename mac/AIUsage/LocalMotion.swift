@@ -11,6 +11,7 @@ enum LocalMotion {
     static func rowReveal(index: Int, reduced: Bool) -> Animation {
         reduced ? .easeOut(duration: 0.2) : .easeOut(duration: 0.3).delay(Double(index) * 0.06)
     }
+
 }
 
 /// Pulses once, the first time the value reaches 80% used, when it turns yellow. Reduce Motion keeps the colour change and skips the scale.

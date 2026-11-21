@@ -4,14 +4,19 @@ enum CodexUsageRingPlacement {
     static let size = CGSize(width: 44, height: 48)
 
     /// AX uses a top-left origin. The fallback is measured from the compact rail in the supplied screenshot.
-    static func frame(in window: CGRect, usage: CGRect?, profile: CGRect?) -> CGRect? {
+    static func frame(in window: CGRect, usage: CGRect?, profile: CGRect?, avoiding obstacles: [CGRect] = []) -> CGRect? {
         guard window.width >= 280, window.height >= 190 else { return nil }
         let centerX = usage?.midX ?? profile?.midX ?? window.minX + 26
         let anchorTop = usage?.minY ?? profile.map { $0.midY - 56 } ?? window.maxY - 78
-        let result = CGRect(x: centerX - size.width / 2, y: anchorTop - size.height - 6,
+        var result = CGRect(x: (centerX - size.width / 2).rounded(), y: floor(anchorTop - size.height - 6),
                             width: size.width, height: size.height)
-        guard window.contains(result), result.minX >= window.minX + 2, result.maxX <= window.minX + 66 else { return nil }
-        return result.integral
+        guard result.minX >= window.minX + 2, result.maxX <= window.minX + 66 else { return nil }
+        // AX y grows downwards. Start at Usage and clear each obstruction upwards in order.
+        for obstacle in obstacles.sorted(by: { $0.maxY > $1.maxY })
+            where !result.intersection(obstacle).isEmpty {
+            result.origin.y = floor(obstacle.minY - size.height - 6)
+        }
+        return result.minY >= window.minY + 6 && window.contains(result) ? result : nil
     }
 }
 

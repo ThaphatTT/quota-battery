@@ -35,7 +35,7 @@ final class ClaudeHeaderRing {
 
         tracker = QuotaOverlayTracker(panel: panel, visibility: visibility, bundleID: "com.anthropic.claudefordesktop",
                                       isEnabled: { UserDefaults.standard.showClaudeHeaderRing },
-                                      locate: ClaudeSessionToolbar.locate) { [weak usagePopover] in
+                                      locate: ClaudeSessionToolbar().locate) { [weak usagePopover] in
             usagePopover?.close(immediately: true)
         }
         defaultsObservation = UserDefaults.standard.observe(\.showClaudeHeaderRing, options: [.new]) { [weak self] _, _ in
@@ -53,54 +53,53 @@ private final class RingPanel: NSPanel {
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
-private enum ClaudeSessionToolbar {
-    private static let buttonRoles = [kAXButtonRole, kAXCheckBoxRole, "AXToggle", "AXToggleButton"]
+private final class ClaudeSessionToolbar {
+    // The tracker serializes probes. Keep offsets for each Claude window across page changes.
+    private var layout = ClaudeHeaderQuota.Layout()
+    private var processID: pid_t?
+
+    private static let buttonRoles = [kAXButtonRole, kAXCheckBoxRole, kAXMenuButtonRole, "AXToggle", "AXToggleButton"]
 
     private static let interactiveRoles = buttonRoles + [
-        kAXPopUpButtonRole, kAXMenuButtonRole, kAXTextFieldRole, kAXTextAreaRole, "AXLink", "AXHeading"
+        kAXPopUpButtonRole, kAXTextFieldRole, kAXTextAreaRole, "AXLink"
     ]
     private static let newSessionNames = ["New session", "New Code Session", "New Claude Code Session", "Start a new session",
                                           "New chat", "Start a new chat", "What would you like to work on?"]
 
     /// AX positions use the top-left of the primary screen. Keep everything in that space until display.
-    static func locate(pid: pid_t) -> QuotaOverlayLocation? {
+    func locate(pid: pid_t) -> QuotaOverlayLocation? {
+        if processID != pid {
+            processID = pid
+            layout = ClaudeHeaderQuota.Layout()
+        }
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.15)
-        let mainWindow: AXUIElement? = attribute(kAXMainWindowAttribute, in: app)
-        let focusedWindow: AXUIElement? = attribute(kAXFocusedWindowAttribute, in: app)
-        guard let window = focusedWindow ?? mainWindow ?? (attribute(kAXWindowsAttribute, in: app) as [AXUIElement]?)?.first,
-              attribute(kAXMinimizedAttribute, in: window) as Bool? != true,
-              let windowFrame = frame(of: window) else { return nil }
-        let nodes = descendants(of: window, limit: 140)
+        let focusedWindow: AXUIElement? = Self.attribute(kAXFocusedWindowAttribute, in: app)
+        let mainWindow: AXUIElement? = Self.attribute(kAXMainWindowAttribute, in: app)
+        guard let window = focusedWindow ?? mainWindow,
+              Self.attribute(kAXMinimizedAttribute, in: window) as Bool? != true,
+              let windowFrame = Self.frame(of: window) else { return nil }
+        let nodes = Self.descendants(of: window, limit: 140)
         let webArea = nodes.first { node in
-            guard role(of: node) == "AXWebArea", let bounds = frame(of: node) else { return false }
+            guard Self.role(of: node) == "AXWebArea", let bounds = Self.frame(of: node) else { return false }
             return bounds.width >= windowFrame.width / 2 && bounds.intersects(windowFrame)
         }
-        let route: URL? = webArea.flatMap { attribute(kAXURLAttribute, in: $0) }
-        let title: String? = attribute(kAXTitleAttribute, in: window)
+        let route: URL? = webArea.flatMap { Self.attribute(kAXURLAttribute, in: $0) }
+        let title: String? = Self.attribute(kAXTitleAttribute, in: window)
         let surface = route?.absoluteString ?? title ?? ""
-        let sessionToolbar = nodes.first { role(of: $0) == kAXToolbarRole && hasName("Session tools", element: $0) }
-        let toolbarNodes = sessionToolbar.map { descendants(of: $0, limit: 48) } ?? []
-        let controls = interactiveFrames(in: nodes + toolbarNodes, nearTopOf: windowFrame)
-
-        if let rail = railFrame(in: toolbarNodes, window: windowFrame) ?? railFrame(in: nodes, window: windowFrame) {
-            let position = ClaudeHeaderQuota.frame(beside: rail)
-            guard let ring = ClaudeHeaderQuota.clearingControls(from: position, in: windowFrame, avoiding: controls)
-                  else { return nil }
-            return QuotaOverlayLocation(window: window, frame: ring, surface: "rail:\(surface)")
+        let sessionToolbar = nodes.first {
+            Self.role(of: $0) == kAXToolbarRole && Self.hasName("Session tools", element: $0)
         }
-
-        // Some chat pages expose a standard window before their session toolbar is mounted.
-        let subrole: String? = attribute(kAXSubroleAttribute, in: window)
-        let isPrimaryWindow = subrole == kAXStandardWindowSubrole
-            || (subrole == nil && mainWindow.map { CFEqual($0, window) } == true)
-        let isNew = route.map(ClaudeHeaderQuota.isNewSessionURL) == true
-            || nodes.contains { isNewSessionContent($0, in: windowFrame) }
-        guard windowFrame.width >= 380, windowFrame.height >= 240,
-              isNew || (isPrimaryWindow && nodes.count > 3),
-              let ring = ClaudeHeaderQuota.newSessionFrame(in: windowFrame, avoiding: controls) else { return nil }
-        let kind = isNew ? "new" : "chat"
-        return QuotaOverlayLocation(window: window, frame: ring, surface: "\(kind):\(surface)")
+        let toolbarNodes = sessionToolbar.map { Self.descendants(of: $0, limit: 48) } ?? []
+        let controls = Self.interactiveFrames(in: nodes + toolbarNodes, nearTopOf: windowFrame)
+        let rail = Self.railFrame(in: toolbarNodes, window: windowFrame) ?? Self.railFrame(in: nodes, window: windowFrame)
+        let isNew = rail == nil && (route.map(ClaudeHeaderQuota.isNewSessionURL) == true
+            || nodes.contains { Self.isNewSessionContent($0, in: windowFrame) })
+        guard let position = layout.placement(windowID: CFHash(window), window: windowFrame, rail: rail,
+                                              isNewSession: isNew, controls: controls) else { return nil }
+        return QuotaOverlayLocation(window: window, frame: position.frame,
+                                    surface: "\(position.anchor.rawValue):\(surface)",
+                                    placementLabel: position.anchor.rawValue)
     }
 
     private static func isNewSessionContent(_ node: AXUIElement, in window: CGRect) -> Bool {
@@ -116,15 +115,24 @@ private enum ClaudeSessionToolbar {
     }
 
     private static func railFrame(in nodes: [AXUIElement], window: CGRect) -> CGRect? {
-        nodes.lazy.filter { buttonRoles.contains(role(of: $0)) && hasName("Session rail", element: $0) }
-            .compactMap { frame(of: $0) }
-            .first { !$0.isEmpty && window.contains($0) && $0.midX > window.midX && $0.midY < window.minY + 120 }
+        let candidates = nodes.compactMap { node -> CGRect? in
+            guard buttonRoles.contains(role(of: node)),
+                  attribute("AXHidden", in: node) as Bool? != true,
+                  [kAXTitleAttribute, kAXDescriptionAttribute, kAXHelpAttribute, kAXIdentifierAttribute, "AXDOMIdentifier"]
+                  .contains(where: { key in
+                      let value: String? = attribute(key, in: node)
+                      return value.map(ClaudeHeaderQuota.isSessionRailLabel) == true
+                  }) else { return nil }
+            return frame(of: node)
+        }
+        return ClaudeHeaderQuota.rail(in: candidates, window: window)
     }
 
     private static func interactiveFrames(in nodes: [AXUIElement], nearTopOf window: CGRect) -> [CGRect] {
         let top = CGRect(x: window.minX, y: window.minY, width: window.width, height: 140)
         return nodes.compactMap {
             guard interactiveRoles.contains(role(of: $0)), let frame = frame(of: $0),
+                  attribute("AXHidden", in: $0) as Bool? != true,
                   frame.intersects(top), !frame.isEmpty else { return nil }
             return frame
         }

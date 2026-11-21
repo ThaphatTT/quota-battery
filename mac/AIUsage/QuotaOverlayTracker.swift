@@ -7,6 +7,13 @@ struct QuotaOverlayAnchor: Equatable {
     let frame: CGRect
     let windowID: CFHashCode
     let surface: String
+
+    static func screenFrame(for frame: CGRect, screens: [CGRect]) -> CGRect? {
+        guard let primary = screens.first else { return nil }
+        let position = CGRect(x: frame.minX, y: primary.maxY - frame.maxY,
+                              width: frame.width, height: frame.height)
+        return screens.contains { $0.contains(position) } ? position : nil
+    }
 }
 
 struct QuotaOverlayGate {
@@ -40,10 +47,12 @@ struct QuotaOverlayGate {
 struct QuotaOverlayLocation {
     let window: AXUIElement
     let anchor: QuotaOverlayAnchor
+    let placementLabel: String?
 
-    init(window: AXUIElement, frame: CGRect, surface: String) {
+    init(window: AXUIElement, frame: CGRect, surface: String, placementLabel: String? = nil) {
         self.window = window
         self.anchor = QuotaOverlayAnchor(frame: frame, windowID: CFHash(window), surface: surface)
+        self.placementLabel = placementLabel
     }
 }
 
@@ -152,7 +161,9 @@ final class QuotaOverlayTracker {
                 return
             }
             observe(pid: pid, window: location?.window)
-            let frame = location.flatMap { screenFrame(for: $0.anchor.frame) }
+            let frame = location.flatMap {
+                QuotaOverlayAnchor.screenFrame(for: $0.anchor.frame, screens: NSScreen.screens.map(\.frame))
+            }
             switch gate.check(frame == nil ? nil : location?.anchor) {
             case .hidden:
                 report(location == nil ? "anchor unavailable" : "anchor offscreen")
@@ -166,8 +177,7 @@ final class QuotaOverlayTracker {
                     self?.probe()
                 }
             case .show:
-                report("presenting overlay")
-                if let frame { show(frame: frame, pid: pid, revision: check) }
+                if let frame { show(frame: frame, pid: pid, revision: check, placementLabel: location?.placementLabel) }
             case .keepShowing:
                 break
             }
@@ -180,15 +190,7 @@ final class QuotaOverlayTracker {
         Self.logger.notice("\(self.bundleID, privacy: .public): \(status, privacy: .public)")
     }
 
-    private func screenFrame(for anchor: CGRect) -> CGRect? {
-        let screens = NSScreen.screens
-        guard let first = screens.first else { return nil }
-        let frame = CGRect(x: anchor.minX, y: first.frame.maxY - anchor.maxY,
-                           width: anchor.width, height: anchor.height)
-        return screens.contains { $0.frame.contains(frame) } ? frame : nil
-    }
-
-    private func show(frame: CGRect, pid: pid_t, revision check: UInt64) {
+    private func show(frame: CGRect, pid: pid_t, revision check: UInt64, placementLabel: String?) {
         guard targetPID == pid, revision == check else { return }
         panel.alphaValue = 0
         panel.setFrame(frame, display: true)
@@ -197,6 +199,19 @@ final class QuotaOverlayTracker {
         visibility.presentation = presentation
         DispatchQueue.main.async { [weak self] in
             guard let self, revision == check, targetPID == pid, visibility.presentation != nil else { return }
+            if let placementLabel {
+                let actual = panel.frame
+                guard abs(actual.minX - frame.minX) <= 0.5, abs(actual.minY - frame.minY) <= 0.5,
+                      abs(actual.width - frame.width) <= 0.5, abs(actual.height - frame.height) <= 0.5 else {
+                    gate.reset()
+                    hide()
+                    report("panel frame differs from \(placementLabel)")
+                    return
+                }
+                report("presenting overlay at \(placementLabel) (frame verified)")
+            } else {
+                report("presenting overlay")
+            }
             panel.alphaValue = 1
         }
     }
